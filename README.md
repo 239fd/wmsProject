@@ -1,6 +1,4 @@
-README.md
-
-# Software for automation of warehouse logistics based on RPA technology.
+# Программное средство автоматизации складской логистики на основе технологии RPA.
 
 Краткое описание проекта, его цели и основные возможности
 
