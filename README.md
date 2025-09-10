@@ -108,5 +108,5 @@ README.md
 
 ## **Контакты**
 
-Автор: email
+Автор: pavelkarliuk1@gmail.com
 
