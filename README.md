@@ -78,7 +78,8 @@
 ### User-flow диаграммы
 
 В данном подразделе представлены user-flow диаграммы для всех ролей пользователей программного средства.
-[user-flow работника](./User-flow работник.pdf)
+
+- [user-flow работника](./User-flow%20%D0%B1%D1%83%D1%85%D0%B3%D0%B0%D0%BB%D1%82%D0%B5%D1%80.pdf)
 <img width="1396" height="1229" alt="{668A970A-6494-4E66-9074-F2141DE7F222}" src="https://github.com/user-attachments/assets/f8899c04-5876-4e14-b1da-c1a35c90073e" />
 
 
