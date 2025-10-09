@@ -1,6 +1,6 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
-CREATE TYPE rack_kind AS ENUM ('SHELF', 'CELL', 'FRIDGE', 'PALLET', 'FREEZER');
+CREATE TYPE rack_kind AS ENUM ('SHELF', 'CELL', 'FRIDGE', 'PALLET');
 
 CREATE TABLE product_category (
     category_id   UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
