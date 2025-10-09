@@ -21,5 +21,3 @@ CREATE TABLE organization_events (
     event_version   INT NOT NULL,
     created_at      TIMESTAMP NOT NULL DEFAULT now()
 );
-
-CREATE INDEX IF NOT EXISTS idx_organization_events_org_id ON organization_events(org_id);

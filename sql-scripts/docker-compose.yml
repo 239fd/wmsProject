@@ -1,0 +1,64 @@
+version: "3.8"
+
+services:
+  postgres-sso:
+    image: postgres:15
+    container_name: postgres-sso
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: sso_service_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data_sso:/var/lib/postgresql/data
+      - ./userDB.sql:/docker-entrypoint-initdb.d/userDB.sql:ro
+
+  postgres-org:
+    image: postgres:15
+    container_name: postgres-org
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: organization_service_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - pg_data_org:/var/lib/postgresql/data
+      - ./organizationDB.sql:/docker-entrypoint-initdb.d/organizationDB.sql:ro
+
+  postgres-warehouse:
+    image: postgres:15
+    container_name: postgres-warehouse
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: warehouse_service_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5434:5432"
+    volumes:
+      - pg_data_warehouse:/var/lib/postgresql/data
+      - ./warehouseDB.sql:/docker-entrypoint-initdb.d/warehouseDB.sql:ro
+
+  postgres-product:
+    image: postgres:15
+    container_name: postgres-product
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: product_service_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5435:5432"
+    volumes:
+      - pg_data_product:/var/lib/postgresql/data
+      - ./productDB.sql:/docker-entrypoint-initdb.d/productDB.sql:ro
+
+volumes:
+  pg_data_sso:
+  pg_data_org:
+  pg_data_warehouse:
+  pg_data_product:
