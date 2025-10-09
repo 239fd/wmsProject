@@ -65,7 +65,14 @@
 
 ### Схема данных
 
-Описание отношений и структур данных, используемых в ПС. Также представить скрипт (программный код), который необходим для генерации БД
+- База данных сервиса аутентификации
+  <img width="977" height="492" alt="изображение" src="https://github.com/user-attachments/assets/c062c928-fe9b-4281-ad00-721cd8bae3d1" />
+- База данных сервиса организаций
+  <img width="869" height="394" alt="изображение" src="https://github.com/user-attachments/assets/b245f234-487b-47b6-a0ff-128e1213d124" />
+- База данных сервиса склада
+  <img width="977" height="1093" alt="изображение" src="https://github.com/user-attachments/assets/3d845f03-b96e-41c6-8d1c-8a48b89eae6c" />
+- База данных сервиса управления товарами и запасами
+  <img width="663" height="1353" alt="изображение" src="https://github.com/user-attachments/assets/426a5d21-b3dc-4878-bcd5-c43c5eb10c33" />
 
 ---
 
