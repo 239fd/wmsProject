@@ -103,8 +103,7 @@ CREATE TABLE shipment_item (
     product_id       UUID NOT NULL REFERENCES product(product_id),
     batch_id         UUID REFERENCES batch(batch_id),
     planned_quantity NUMERIC(12,3) NOT NULL,
-    actual_quantity  NUMERIC(12,3),
-    comment          TEXT
+    actual_quantity  NUMERIC(12,3)
 );
 
 CREATE TABLE inventory_session (
