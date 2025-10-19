@@ -126,6 +126,64 @@
 ### Примеры экранов UI
 - Главная страница программного средства
 <img width="977" height="571" alt="изображение" src="https://github.com/user-attachments/assets/297a7b3f-82ba-45e0-8323-7bf51c2e16c2" />
+- Форма входа в программное средство
+<img width="977" height="537" alt="изображение" src="https://github.com/user-attachments/assets/14883256-28b4-4ba6-8971-dfaa43cc8ff8" />
+- Форма регистрации в программном средстве
+<img width="977" height="563" alt="изображение" src="https://github.com/user-attachments/assets/b2042b64-cbd1-42ce-b7b5-0ee56b7f58bd" />
+- Форма выбора роли при регистрации в программном средстве
+<img width="977" height="566" alt="изображение" src="https://github.com/user-attachments/assets/d1e0c0aa-936a-4733-9e4a-c6793d2f6e7c" />
+- Домашняя страница программного средства
+<img width="977" height="583" alt="изображение" src="https://github.com/user-attachments/assets/3b92e8b3-be1a-4373-9044-c4fa029703f1" />
+- Вкладка профиля пользователя
+<img width="977" height="517" alt="изображение" src="https://github.com/user-attachments/assets/d2b522ff-4105-4886-b3ac-32f558f74006" />
+- Вкладка активности профиля
+<img width="977" height="582" alt="изображение" src="https://github.com/user-attachments/assets/dfa380f4-ea55-4e80-8d00-d57f55bfc43e" />
+- Страница приёма товара
+<img width="977" height="342" alt="изображение" src="https://github.com/user-attachments/assets/5ee2d74b-bc38-4c72-be1c-67866f4a44c2" />
+- Форма создания поставки
+<img width="977" height="468" alt="изображение" src="https://github.com/user-attachments/assets/07dfcfc8-9250-41e2-bdb6-b4308cd3f938" />
+- Форма ввода товаров
+<img width="977" height="577" alt="изображение" src="https://github.com/user-attachments/assets/8692ef7d-4520-4478-990a-10d360fe768c" />
+- Форма добавления партии товара
+<img width="977" height="586" alt="изображение" src="https://github.com/user-attachments/assets/9267453e-6cfa-4c97-90f7-7eccd5ff6bda" />
+- Форма размещения товара
+<img width="977" height="540" alt="изображение" src="https://github.com/user-attachments/assets/13ae319b-fdc3-4660-8590-2f0a2d978f80" />
+- Страница отгрузки товара
+<img width="977" height="393" alt="изображение" src="https://github.com/user-attachments/assets/574d34f9-cca9-4e7c-953f-1ada70e00aaf" />
+- Форма создания новой заявки на отгрузку товара
+<img width="977" height="559" alt="изображение" src="https://github.com/user-attachments/assets/848dea56-d165-48bf-8d8b-25d88976bdd3" />
+- Форма выбора товара
+<img width="977" height="568" alt="изображение" src="https://github.com/user-attachments/assets/597f17e9-3b67-4571-be6c-389939cdaf34" />
+- Форма резервирования товара при отгрузке
+<img width="977" height="573" alt="изображение" src="https://github.com/user-attachments/assets/ee1e6762-274a-481b-9206-0accf7dd055d" />
+- Форма добавления товара согласно заявке
+<img width="977" height="588" alt="изображение" src="https://github.com/user-attachments/assets/11e4df42-3e0e-43df-b127-76199dcbfa48" />
+- Страница инвентаризации
+<img width="977" height="524" alt="изображение" src="https://github.com/user-attachments/assets/c715530d-b16f-456e-952c-07bb0498bc68" />
+- Форма начала сессии инвентаризации
+<img width="977" height="541" alt="изображение" src="https://github.com/user-attachments/assets/7f4dfb12-fa16-4ff6-abb9-2860f4de2e1d" />
+- Страница ввода артикулов товаров
+<img width="977" height="580" alt="изображение" src="https://github.com/user-attachments/assets/babad113-d762-4368-9691-4fd566fe9af5" />
+- Страница списания товаров
+<img width="977" height="576" alt="изображение" src="https://github.com/user-attachments/assets/bbe2d217-aa36-4ed1-ac64-74469bd818e7" />
+- Страница списания товаров с возможностью ввода данных о товаре
+<img width="929" height="558" alt="изображение" src="https://github.com/user-attachments/assets/a5abcaec-cac3-42d3-be72-c41857ec7d41" />
+- Страница аналитики по запасам и их структуре, заполненности складов, операциям по типам
+<img width="977" height="463" alt="изображение" src="https://github.com/user-attachments/assets/08e52410-850e-40c9-b8df-fc575eb72120" />
+- Страница аналитики по динамике операций по складам
+<img width="977" height="302" alt="изображение" src="https://github.com/user-attachments/assets/e8143f0f-91d2-4859-aab6-85d7e8a4d8a4" />
+- Страница аналитики по сотрудникам и их производительности
+<img width="905" height="303" alt="изображение" src="https://github.com/user-attachments/assets/f1909c37-8db4-49ab-8361-55ccee31926e" />
+- Вкладка сотрудников организации
+<img width="977" height="323" alt="изображение" src="https://github.com/user-attachments/assets/64c8ff2f-09bf-4ad2-93dc-61fbba4868af" />
+- Вкладка организации
+<img width="977" height="326" alt="изображение" src="https://github.com/user-attachments/assets/e018234c-f598-475a-b50e-ac59352f190d" />
+- Форма ввода данных о организации
+<img width="977" height="521" alt="изображение" src="https://github.com/user-attachments/assets/7e093f61-559d-4bdb-8d94-18290ae7f40d" />
+- Вкладка складов
+<img width="977" height="584" alt="изображение" src="https://github.com/user-attachments/assets/5d222427-cb17-4e06-b296-7554e92e8821" />
+- Форма ввода данных о стеллажах и ячейках
+<img width="977" height="555" alt="изображение" src="https://github.com/user-attachments/assets/966b779c-7e09-4899-898c-1e00bf5286a3" />
 
 ---
 
