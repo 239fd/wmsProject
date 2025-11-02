@@ -1,0 +1,14 @@
+services:
+  user-db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: user_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - user_data:/var/lib/postgresql/data
+      - ./scripts:/docker-entrypoint-initdb.d
+volumes:
+  user_data:
