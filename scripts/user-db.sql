@@ -16,7 +16,7 @@ CREATE TABLE user_read_model (
     user_id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     email           VARCHAR(255) NOT NULL UNIQUE,
     full_name       VARCHAR(255) NOT NULL,
-    roles           user_role[] NOT NULL,
+    roles           user_role NOT NULL,
     password_hash   VARCHAR(255),
     provider        auth_provider NOT NULL,
     provider_uid    VARCHAR(128),

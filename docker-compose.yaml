@@ -10,5 +10,15 @@ services:
     volumes:
       - user_data:/var/lib/postgresql/data
       - ./scripts:/docker-entrypoint-initdb.d
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+
 volumes:
   user_data:
+  redis_data:
