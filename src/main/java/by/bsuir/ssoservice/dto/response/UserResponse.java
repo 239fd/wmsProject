@@ -12,6 +12,7 @@ public record UserResponse(
         String email,
         String fullName,
         UserRole role,
+        String photoBase64, // Base64 encoded photo
         UUID organizationId,
         UUID warehouseId
 ) {}

@@ -67,17 +67,32 @@ public class JwtTokenService {
 
     public boolean validateAccessToken(String token) {
         try {
+            log.debug("Validating access token");
             SignedJWT signedJWT = SignedJWT.parse(token);
             JWSVerifier verifier = new RSASSAVerifier((RSAPublicKey) keyPair.getPublic());
 
             if (!signedJWT.verify(verifier)) {
+                log.warn("Token signature verification failed");
                 return false;
             }
 
+            log.debug("Token signature verified successfully");
+
             Date expirationTime = signedJWT.getJWTClaimsSet().getExpirationTime();
-            return expirationTime != null && expirationTime.after(new Date());
+            if (expirationTime == null) {
+                log.warn("Token has no expiration time");
+                return false;
+            }
+
+            if (!expirationTime.after(new Date())) {
+                log.warn("Token has expired. Expiration: {}, Current: {}", expirationTime, new Date());
+                return false;
+            }
+
+            log.debug("Token is valid and not expired");
+            return true;
         } catch (Exception e) {
-            log.error("Error validating access token", e);
+            log.error("Error validating access token: {}", e.getMessage(), e);
             return false;
         }
     }
@@ -88,6 +103,40 @@ public class JwtTokenService {
             return UUID.fromString(signedJWT.getJWTClaimsSet().getSubject());
         } catch (Exception e) {
             log.error("Error extracting userId from token", e);
+            return null;
+        }
+    }
+
+    public boolean validateToken(String token) {
+        return validateAccessToken(token);
+    }
+
+    public String extractUserId(String token) {
+        try {
+            SignedJWT signedJWT = SignedJWT.parse(token);
+            return signedJWT.getJWTClaimsSet().getSubject();
+        } catch (Exception e) {
+            log.error("Error extracting userId from token", e);
+            return null;
+        }
+    }
+
+    public String extractEmail(String token) {
+        try {
+            SignedJWT signedJWT = SignedJWT.parse(token);
+            return signedJWT.getJWTClaimsSet().getStringClaim("email");
+        } catch (Exception e) {
+            log.error("Error extracting email from token", e);
+            return null;
+        }
+    }
+
+    public String extractRole(String token) {
+        try {
+            SignedJWT signedJWT = SignedJWT.parse(token);
+            return signedJWT.getJWTClaimsSet().getStringClaim("role");
+        } catch (Exception e) {
+            log.error("Error extracting role from token", e);
             return null;
         }
     }

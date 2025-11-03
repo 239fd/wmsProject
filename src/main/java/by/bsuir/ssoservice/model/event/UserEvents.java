@@ -14,7 +14,6 @@ import java.util.UUID;
  */
 public class UserEvents {
 
-    @Data
     @NoArgsConstructor
     @AllArgsConstructor
     public static class UserCreatedEvent {

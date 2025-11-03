@@ -21,18 +21,22 @@ CREATE TABLE user_read_model (
     provider        auth_provider NOT NULL,
     provider_uid    VARCHAR(128),
     photo           BYTEA,
-     organization_id UUID,
-     warehouse_id    UUID,
+    organization_id UUID,
+    warehouse_id    UUID,
     is_active       BOOLEAN NOT NULL DEFAULT TRUE,
     created_at      TIMESTAMP NOT NULL DEFAULT now(),
     updated_at      TIMESTAMP NOT NULL DEFAULT now()
 );
 
-CREATE TABLE user_login_audit (
-    id              SERIAL PRIMARY KEY,
-    user_id         UUID NOT NULL,
-    login_time      TIMESTAMP NOT NULL DEFAULT now(),
-    ip_address      INET,
-    user_agent      VARCHAR(512),
-    provider        auth_provider NOT NULL
+CREATE TABLE login_audit (
+    id                  SERIAL PRIMARY KEY,
+    user_id             UUID NOT NULL,
+    login_at            TIMESTAMP NOT NULL DEFAULT now(),
+    ip_address          INET,
+    user_agent          VARCHAR(512),
+    provider            auth_provider NOT NULL,
+    refresh_token_hash  VARCHAR(60) UNIQUE,
+    is_active           BOOLEAN NOT NULL DEFAULT TRUE,
+    logout_at           TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES user_read_model(user_id) ON DELETE CASCADE
 );

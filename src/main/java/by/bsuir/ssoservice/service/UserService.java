@@ -4,11 +4,13 @@ import by.bsuir.ssoservice.dto.request.LoginRequest;
 import by.bsuir.ssoservice.dto.request.RegisterRequest;
 import by.bsuir.ssoservice.dto.response.AuthResponse;
 import by.bsuir.ssoservice.dto.response.UserResponse;
+import by.bsuir.ssoservice.model.entity.LoginAudit;
 import by.bsuir.ssoservice.model.entity.UserEvent;
 import by.bsuir.ssoservice.model.entity.UserReadModel;
 import by.bsuir.ssoservice.model.enums.AuthProvider;
 import by.bsuir.ssoservice.model.enums.UserRole;
 import by.bsuir.ssoservice.model.event.UserEvents;
+import by.bsuir.ssoservice.repository.LoginAuditRepository;
 import by.bsuir.ssoservice.repository.UserEventRepository;
 import by.bsuir.ssoservice.repository.UserReadModelRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -18,8 +20,11 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Base64;
+
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -35,6 +40,7 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenService jwtTokenService;
     private final RefreshTokenService refreshTokenService;
+    private final LoginAuditRepository loginAuditRepository;
     private final ObjectMapper objectMapper;
 
     @Transactional
@@ -97,11 +103,74 @@ public class UserService {
 
         log.info("User registered successfully: {}", request.email());
 
-        return generateTokens(readModel);
+        return generateTokensWithAudit(readModel, null, null);
     }
 
-    @Transactional(readOnly = true)
-    public AuthResponse login(LoginRequest request) {
+    @Transactional
+    public AuthResponse register(RegisterRequest request, String ipAddress, String userAgent) {
+        if (readModelRepository.existsByEmail(request.email())) {
+            throw new IllegalArgumentException("Пользователь с таким email уже существует");
+        }
+
+        if ((request.role() == UserRole.WORKER || request.role() == UserRole.ACCOUNTANT)
+                && (request.organizationCode() == null || request.organizationCode().isBlank())) {
+            throw new IllegalArgumentException("Для роли " + request.role() + " необходим код предприятия");
+        }
+
+        UUID userId = UUID.randomUUID();
+        String passwordHash = passwordEncoder.encode(request.password());
+
+        UUID organizationId = null;
+        UUID warehouseId = null;
+
+        if (request.organizationCode() != null && !request.organizationCode().isBlank()) {
+            organizationId = UUID.randomUUID();
+            if (request.role() == UserRole.WORKER) {
+                warehouseId = UUID.randomUUID();
+            }
+        }
+
+        UserEvents.UserCreatedEvent event = new UserEvents.UserCreatedEvent(
+                request.email(),
+                request.getFullName(),
+                request.role(),
+                passwordHash,
+                AuthProvider.LOCAL,
+                organizationId,
+                warehouseId
+        );
+
+        UserEvent userEvent = UserEvent.builder()
+                .userId(userId)
+                .eventType("USER_CREATED")
+                .eventData(objectMapper.valueToTree(event))
+                .eventVersion(1)
+                .createdAt(LocalDateTime.now())
+                .build();
+        eventRepository.save(userEvent);
+
+        UserReadModel readModel = UserReadModel.builder()
+                .userId(userId)
+                .email(request.email())
+                .fullName(request.getFullName())
+                .role(request.role())
+                .passwordHash(passwordHash)
+                .provider(AuthProvider.LOCAL)
+                .organizationId(organizationId)
+                .warehouseId(warehouseId)
+                .isActive(true)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+        readModelRepository.save(readModel);
+
+        log.info("User registered successfully: {}", request.email());
+
+        return generateTokensWithAudit(readModel, ipAddress, userAgent);
+    }
+
+    @Transactional
+    public AuthResponse login(LoginRequest request, String ipAddress, String userAgent) {
         UserReadModel user = readModelRepository.findByEmail(request.email())
                 .orElseThrow(() -> new IllegalArgumentException("Неверный email или пароль"));
 
@@ -115,7 +184,7 @@ public class UserService {
 
         log.info("User logged in: {}", request.email());
 
-        return generateTokens(user);
+        return generateTokensWithAudit(user, ipAddress, userAgent);
     }
 
     @Transactional(readOnly = true)
@@ -140,14 +209,29 @@ public class UserService {
         return generateTokens(user);
     }
 
+    @Transactional
     public void logout(String refreshToken) {
         if (refreshToken != null && !refreshToken.isBlank()) {
+
+            List<LoginAudit> activeSessions = loginAuditRepository.findByUserIdAndIsActiveTrue(
+                    refreshTokenService.getUserIdByRefreshToken(refreshToken)
+            );
+
+            for (LoginAudit session : activeSessions) {
+                if (passwordEncoder.matches(refreshToken, session.getRefreshTokenHash())) {
+                    loginAuditRepository.deactivateSessionById(session.getId());
+                    break;
+                }
+            }
+
             refreshTokenService.deleteRefreshToken(refreshToken);
             log.info("User logged out, refresh token deleted");
         }
     }
 
+    @Transactional
     public void logoutAll(UUID userId) {
+        loginAuditRepository.deactivateAllUserSessions(userId);
         refreshTokenService.deleteAllUserTokens(userId);
         log.info("User logged out from all devices: {}", userId);
     }
@@ -157,11 +241,17 @@ public class UserService {
         UserReadModel user = readModelRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("Пользователь не найден"));
 
+        String photoBase64 = null;
+        if (user.getPhoto() != null) {
+            photoBase64 = Base64.getEncoder().encodeToString(user.getPhoto());
+        }
+
         return new UserResponse(
                 user.getUserId(),
                 user.getEmail(),
                 user.getFullName(),
                 user.getRole(),
+                photoBase64,
                 user.getOrganizationId(),
                 user.getWarehouseId()
         );
@@ -183,6 +273,44 @@ public class UserService {
                 user.getUserId(),
                 Duration.ofSeconds(jwtTokenService.getRefreshTokenValidity())
         );
+
+        return AuthResponse.of(
+                accessToken,
+                refreshToken,
+                jwtTokenService.getAccessTokenValidity()
+        );
+    }
+
+    private AuthResponse generateTokensWithAudit(UserReadModel user, String ipAddress, String userAgent) {
+        UserRole role = user.getRole();
+
+        String accessToken = jwtTokenService.generateAccessToken(
+                user.getUserId(),
+                user.getEmail(),
+                role
+        );
+
+        String refreshToken = jwtTokenService.generateRefreshToken();
+
+        refreshTokenService.saveRefreshToken(
+                refreshToken,
+                user.getUserId(),
+                Duration.ofSeconds(jwtTokenService.getRefreshTokenValidity())
+        );
+
+        // Хэшируем refresh токен перед сохранением
+        String refreshTokenHash = passwordEncoder.encode(refreshToken);
+
+        LoginAudit loginAudit = LoginAudit.builder()
+                .userId(user.getUserId())
+                .refreshTokenHash(refreshTokenHash)
+                .ipAddress(ipAddress)
+                .userAgent(userAgent)
+                .provider(user.getProvider())
+                .loginAt(LocalDateTime.now())
+                .isActive(true)
+                .build();
+        loginAuditRepository.save(loginAudit);
 
         return AuthResponse.of(
                 accessToken,
