@@ -15,7 +15,6 @@ public class CORSConfig {
 
     @Bean
     public FilterRegistrationBean<CorsFilter> corsFilter() {
-        log.debug("CREATE CORS FILTER");
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         CorsConfiguration config = new CorsConfiguration();
 

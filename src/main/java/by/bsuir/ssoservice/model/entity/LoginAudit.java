@@ -39,6 +39,7 @@ public class LoginAudit {
     @Enumerated(EnumType.STRING)
     @Column(name = "provider", nullable = false, columnDefinition = "auth_provider")
     @org.hibernate.annotations.ColumnTransformer(
+            read = "provider::text",
             write = "?::auth_provider"
     )
     private AuthProvider provider;

@@ -17,9 +17,6 @@ import java.time.Instant;
 import java.util.Date;
 import java.util.UUID;
 
-/**
- * Сервис для генерации и валидации JWT токенов
- */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -67,32 +64,25 @@ public class JwtTokenService {
 
     public boolean validateAccessToken(String token) {
         try {
-            log.debug("Validating access token");
             SignedJWT signedJWT = SignedJWT.parse(token);
             JWSVerifier verifier = new RSASSAVerifier((RSAPublicKey) keyPair.getPublic());
 
             if (!signedJWT.verify(verifier)) {
-                log.warn("Token signature verification failed");
                 return false;
             }
 
-            log.debug("Token signature verified successfully");
-
             Date expirationTime = signedJWT.getJWTClaimsSet().getExpirationTime();
             if (expirationTime == null) {
-                log.warn("Token has no expiration time");
                 return false;
             }
 
             if (!expirationTime.after(new Date())) {
-                log.warn("Token has expired. Expiration: {}, Current: {}", expirationTime, new Date());
                 return false;
             }
 
-            log.debug("Token is valid and not expired");
             return true;
         } catch (Exception e) {
-            log.error("Error validating access token: {}", e.getMessage(), e);
+            log.error("Error validating token: {}", e.getMessage());
             return false;
         }
     }

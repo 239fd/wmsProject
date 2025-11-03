@@ -27,9 +27,6 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * Сервис для управления пользователями с реализацией CQRS и Event Sourcing
- */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -101,7 +98,6 @@ public class UserService {
                 .build();
         readModelRepository.save(readModel);
 
-        log.info("User registered successfully: {}", request.email());
 
         return generateTokensWithAudit(readModel, null, null);
     }
@@ -164,7 +160,6 @@ public class UserService {
                 .build();
         readModelRepository.save(readModel);
 
-        log.info("User registered successfully: {}", request.email());
 
         return generateTokensWithAudit(readModel, ipAddress, userAgent);
     }
@@ -182,7 +177,6 @@ public class UserService {
             throw new IllegalArgumentException("Неверный email или пароль");
         }
 
-        log.info("User logged in: {}", request.email());
 
         return generateTokensWithAudit(user, ipAddress, userAgent);
     }
@@ -204,7 +198,6 @@ public class UserService {
 
         refreshTokenService.deleteRefreshToken(refreshToken);
 
-        log.info("Token refreshed for user: {}", user.getEmail());
 
         return generateTokens(user);
     }
@@ -225,7 +218,6 @@ public class UserService {
             }
 
             refreshTokenService.deleteRefreshToken(refreshToken);
-            log.info("User logged out, refresh token deleted");
         }
     }
 
@@ -233,7 +225,6 @@ public class UserService {
     public void logoutAll(UUID userId) {
         loginAuditRepository.deactivateAllUserSessions(userId);
         refreshTokenService.deleteAllUserTokens(userId);
-        log.info("User logged out from all devices: {}", userId);
     }
 
     @Transactional(readOnly = true)
@@ -281,7 +272,7 @@ public class UserService {
         );
     }
 
-    private AuthResponse generateTokensWithAudit(UserReadModel user, String ipAddress, String userAgent) {
+    public AuthResponse generateTokensWithAudit(UserReadModel user, String ipAddress, String userAgent) {
         UserRole role = user.getRole();
 
         String accessToken = jwtTokenService.generateAccessToken(
@@ -298,7 +289,6 @@ public class UserService {
                 Duration.ofSeconds(jwtTokenService.getRefreshTokenValidity())
         );
 
-        // Хэшируем refresh токен перед сохранением
         String refreshTokenHash = passwordEncoder.encode(refreshToken);
 
         LoginAudit loginAudit = LoginAudit.builder()
@@ -317,6 +307,87 @@ public class UserService {
                 refreshToken,
                 jwtTokenService.getAccessTokenValidity()
         );
+    }
+
+    /**
+     * Вход для существующего OAuth пользователя
+     */
+    @Transactional
+    public AuthResponse loginOAuthUser(UserReadModel user, String ipAddress, String userAgent) {
+        if (!user.getIsActive()) {
+            throw new IllegalArgumentException("Аккаунт деактивирован");
+        }
+
+        log.info("OAuth user logged in: {}", user.getEmail());
+        return generateTokensWithAudit(user, ipAddress, userAgent);
+    }
+
+    /**
+     * Создание нового OAuth пользователя с выбранной ролью
+     */
+    @Transactional
+    public UserReadModel createOAuthUser(
+            String email,
+            String fullName,
+            String provider,
+            byte[] photo,
+            UserRole role,
+            String organizationCode,
+            String warehouseCode) {
+
+        if (readModelRepository.existsByEmail(email)) {
+            throw new IllegalArgumentException("Пользователь с таким email уже существует");
+        }
+
+        UUID userId = UUID.randomUUID();
+        UUID organizationId = null;
+        UUID warehouseId = null;
+
+        if (organizationCode != null && !organizationCode.isBlank()) {
+            organizationId = UUID.fromString(organizationCode);
+            if (role == UserRole.WORKER && warehouseCode != null) {
+                warehouseId = UUID.fromString(warehouseCode);
+            }
+        }
+
+        UserEvents.UserCreatedEvent event = new UserEvents.UserCreatedEvent(
+                email,
+                fullName,
+                role,
+                null,
+                AuthProvider.valueOf(provider.toUpperCase()),
+                organizationId,
+                warehouseId
+        );
+
+        UserEvent userEvent = UserEvent.builder()
+                .userId(userId)
+                .eventType("USER_CREATED_OAUTH")
+                .eventData(objectMapper.valueToTree(event))
+                .eventVersion(1)
+                .createdAt(LocalDateTime.now())
+                .build();
+        eventRepository.save(userEvent);
+
+        UserReadModel readModel = UserReadModel.builder()
+                .userId(userId)
+                .email(email)
+                .fullName(fullName)
+                .role(role)
+                .passwordHash(null)
+                .provider(AuthProvider.valueOf(provider.toUpperCase()))
+                .photo(photo)
+                .organizationId(organizationId)
+                .warehouseId(warehouseId)
+                .isActive(true)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+
+        readModelRepository.save(readModel);
+        log.info("OAuth user created: {} via {}", email, provider);
+
+        return readModel;
     }
 }
 

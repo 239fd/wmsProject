@@ -32,26 +32,19 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             @NonNull FilterChain filterChain
     ) throws ServletException, IOException {
         String requestURI = request.getRequestURI();
-        log.info("Processing request: {} {}", request.getMethod(), requestURI);
 
         try {
             String authHeader = request.getHeader("Authorization");
-            log.info("Authorization header present: {}", authHeader != null);
 
             if (authHeader != null && authHeader.startsWith("Bearer ")) {
                 String jwt = authHeader.substring(7);
-                log.info("JWT token extracted, length: {}, first 20 chars: {}...",
-                    jwt.length(), jwt.substring(0, Math.min(20, jwt.length())));
 
                 if (jwtTokenService.validateToken(jwt)) {
                     String userId = jwtTokenService.extractUserId(jwt);
                     String email = jwtTokenService.extractEmail(jwt);
                     String role = jwtTokenService.extractRole(jwt);
 
-                    log.info("Token validated successfully for user: {} ({}), role: {}", email, userId, role);
-
                     if (userId == null || role == null) {
-                        log.error("UserId or role is null after token validation");
                         filterChain.doFilter(request, response);
                         return;
                     }
@@ -64,17 +57,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
                     authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                     SecurityContextHolder.getContext().setAuthentication(authentication);
-
-                    log.info("JWT authentication successful for user: {}, Authentication set: {}",
-                        email, SecurityContextHolder.getContext().getAuthentication() != null);
-                } else {
-                    log.warn("JWT token validation failed for request: {}", requestURI);
                 }
-            } else {
-                log.info("No valid Authorization header found for request: {}", requestURI);
             }
         } catch (Exception e) {
-            log.error("Cannot set user authentication for {}: {}", requestURI, e.getMessage(), e);
+            log.error("Cannot set user authentication: {}", e.getMessage());
         }
 
         filterChain.doFilter(request, response);

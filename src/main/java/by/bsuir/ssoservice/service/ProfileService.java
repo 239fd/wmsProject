@@ -140,7 +140,7 @@ public class ProfileService {
                         session.getIpAddress(),
                         session.getUserAgent(),
                         session.getLoginAt(),
-                        false // Невозможно определить текущую сессию по хэшу
+                        false
                 ))
                 .collect(Collectors.toList());
     }
@@ -156,8 +156,6 @@ public class ProfileService {
 
         loginAuditRepository.deactivateSessionById(sessionId);
 
-        // Удаляем токен из Redis - нужно найти по userId
-        // Токен удалится автоматически по истечении TTL
 
         log.info("Session {} terminated for user: {}", sessionId, userId);
     }

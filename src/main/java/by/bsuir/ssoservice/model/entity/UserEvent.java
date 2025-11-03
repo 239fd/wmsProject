@@ -12,10 +12,6 @@ import org.hibernate.annotations.Type;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
-/**
- * Event Sourcing - таблица событий для пользователей (Write Model)
- * Все изменения пользователя сохраняются как события
- */
 @Entity
 @Table(name = "user_events")
 @Data

@@ -3,22 +3,16 @@ package by.bsuir.ssoservice.model.entity;
 import by.bsuir.ssoservice.model.enums.AuthProvider;
 import by.bsuir.ssoservice.model.enums.UserRole;
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import lombok.*;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
 
-/**
- * Read Model - таблица для быстрого чтения данных пользователя
- * Обновляется на основе событий из user_events
- */
 @Entity
 @Table(name = "user_read_model")
-@Data
 @Builder
+@Getter
+@Setter
 @NoArgsConstructor
 @AllArgsConstructor
 public class UserReadModel {
@@ -36,6 +30,7 @@ public class UserReadModel {
     @Enumerated(EnumType.STRING)
     @Column(name = "role", nullable = false, columnDefinition = "user_role")
     @org.hibernate.annotations.ColumnTransformer(
+            read = "role::text",
             write = "?::user_role"
     )
     private UserRole role;
@@ -46,12 +41,10 @@ public class UserReadModel {
     @Enumerated(EnumType.STRING)
     @Column(name = "provider", nullable = false, columnDefinition = "auth_provider")
     @org.hibernate.annotations.ColumnTransformer(
+            read = "provider::text",
             write = "?::auth_provider"
     )
     private AuthProvider provider;
-
-    @Column(name = "provider_uid", length = 128)
-    private String providerUid;
 
     @Column(name = "photo", columnDefinition = "bytea")
     private byte[] photo;

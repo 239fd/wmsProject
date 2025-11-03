@@ -19,7 +19,6 @@ CREATE TABLE user_read_model (
     role            user_role NOT NULL,
     password_hash   VARCHAR(255),
     provider        auth_provider NOT NULL,
-    provider_uid    VARCHAR(128),
     photo           BYTEA,
     organization_id UUID,
     warehouse_id    UUID,
@@ -40,3 +39,20 @@ CREATE TABLE login_audit (
     logout_at           TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES user_read_model(user_id) ON DELETE CASCADE
 );
+
+CREATE TABLE oauth_pending_registrations (
+    id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    temporary_token   VARCHAR(255) NOT NULL UNIQUE,
+    email             VARCHAR(255) NOT NULL,
+    full_name         VARCHAR(255),
+    provider          VARCHAR(20) NOT NULL,
+    provider_uid      VARCHAR(255) NOT NULL,
+    photo             BYTEA,
+    created_at        TIMESTAMP NOT NULL DEFAULT now(),
+    expires_at        TIMESTAMP NOT NULL,
+    completed         BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+CREATE INDEX idx_oauth_pending_token ON oauth_pending_registrations(temporary_token) WHERE completed = FALSE;
+
+CREATE INDEX idx_oauth_pending_expires ON oauth_pending_registrations(expires_at) WHERE completed = FALSE;
