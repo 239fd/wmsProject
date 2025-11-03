@@ -12,7 +12,7 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 /**
- * Read Model - денормализованная таблица для быстрого чтения данных пользователя
+ * Read Model - таблица для быстрого чтения данных пользователя
  * Обновляется на основе событий из user_events
  */
 @Entity
@@ -24,7 +24,6 @@ import java.util.UUID;
 public class UserReadModel {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.AUTO)
     @Column(name = "user_id")
     private UUID userId;
 
@@ -35,14 +34,20 @@ public class UserReadModel {
     private String fullName;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "roles", nullable = false, columnDefinition = "user_role")
-    private UserRole roles;
+    @Column(name = "role", nullable = false, columnDefinition = "user_role")
+    @org.hibernate.annotations.ColumnTransformer(
+            write = "?::user_role"
+    )
+    private UserRole role;
 
     @Column(name = "password_hash")
     private String passwordHash;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "provider", nullable = false, columnDefinition = "auth_provider")
+    @org.hibernate.annotations.ColumnTransformer(
+            write = "?::auth_provider"
+    )
     private AuthProvider provider;
 
     @Column(name = "provider_uid", length = 128)
