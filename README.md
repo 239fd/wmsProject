@@ -68,7 +68,7 @@
 ### Схема данных
 
 - База данных сервиса аутентификации
-  <img width="977" height="492" alt="изображение" src="https://github.com/user-attachments/assets/c062c928-fe9b-4281-ad00-721cd8bae3d1" />
+  <img width="539" height="697" alt="user_db drawio" src="https://github.com/user-attachments/assets/9b8c0049-b8eb-43e7-aee9-dfae9297494c" />
 - База данных сервиса организаций
   <img width="869" height="394" alt="изображение" src="https://github.com/user-attachments/assets/b245f234-487b-47b6-a0ff-128e1213d124" />
 - База данных сервиса склада
