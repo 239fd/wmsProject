@@ -211,6 +211,7 @@
 Такой подход делает атаки методом перебора (brute-force) и с использованием rainbow-таблиц вычислительно неэффективными.
 
 Пример кода:
+```
 @Bean
 public PasswordEncoder passwordEncoder() {
     return new BCryptPasswordEncoder();
@@ -222,6 +223,7 @@ user.setPasswordHash(passwordHash);
 if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
     throw new IllegalArgumentException("Неверные учетные данные");
 }
+```
 Как видно из примера, BCryptPasswordEncoder регистрируется в Spring-контексте как основной PasswordEncoder,
 что позволяет фреймворку Spring Security автоматически использовать его для верификации паролей.
 
@@ -245,6 +247,7 @@ Refresh Token не является JWT, а представляет собой 
 Этот подход позволяет мгновенно отзывать токены (например, при выходе пользователя из системы).
 
 Пример кода генерации JWT:
+```
 public String generateAccessToken(UUID userId, String email, UserRole role) {
     try {
         Instant now = Instant.now();
@@ -271,6 +274,7 @@ public String generateAccessToken(UUID userId, String email, UserRole role) {
         throw new RuntimeException("Failed to generate access token", e);
     }
 }
+```
 Таким образом реализовано безопасное использование JWT в stateless-среде.
 
 #### Аудит и логирование
