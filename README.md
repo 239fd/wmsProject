@@ -96,8 +96,8 @@
   
   <img width="595" height="906" alt="изображение" src="https://github.com/user-attachments/assets/5fb533d9-5e53-4c11-89bb-f2ecce2535ed" />
 - Диаграмма последовательности
-  
-  <img width="737" height="1148" alt="изображение" src="https://github.com/user-attachments/assets/47dbd174-eb04-4d4f-866d-9209f4a048d3" />
+
+  <img width="793" height="1236" alt="Диаграмма последовательности (3) drawio" src="https://github.com/user-attachments/assets/e81509f0-82c4-469e-9bfd-387ea481d90d" />
 - Диаграмма активности
   
   <img width="582" height="935" alt="изображение" src="https://github.com/user-attachments/assets/705933aa-d105-488a-8a9b-a9d7e70d0b16" />
@@ -234,8 +234,8 @@
   
   <img width="595" height="906" alt="изображение" src="https://github.com/user-attachments/assets/5fb533d9-5e53-4c11-89bb-f2ecce2535ed" />
 - Диаграмма последовательности
-  
-  <img width="737" height="1148" alt="изображение" src="https://github.com/user-attachments/assets/47dbd174-eb04-4d4f-866d-9209f4a048d3" />
+
+  <img width="793" height="1236" alt="Диаграмма последовательности (3) drawio" src="https://github.com/user-attachments/assets/e81509f0-82c4-469e-9bfd-387ea481d90d" />
 - Диаграмма активности
   
   <img width="582" height="935" alt="изображение" src="https://github.com/user-attachments/assets/705933aa-d105-488a-8a9b-a9d7e70d0b16" />
