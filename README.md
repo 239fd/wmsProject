@@ -22,6 +22,7 @@
 1. [Архитектура](#Архитектура)
 	1. [C4-модель](#C4-модель)
 	2. [Схема данных](#Схема_данных)
+	3. [UML-диаграммы](#UML-диаграммы)
 2. [Функциональные возможности](#Функциональные_возможности)
 	1. [Диаграмма вариантов использования](#Диаграмма_вариантов_использования)
 	2. [User-flow диаграммы](#User-flow_диаграммы)
@@ -75,6 +76,22 @@
   <img width="977" height="1093" alt="изображение" src="https://github.com/user-attachments/assets/3d845f03-b96e-41c6-8d1c-8a48b89eae6c" />
 - База данных сервиса управления товарами и запасами
   <img width="663" height="1353" alt="изображение" src="https://github.com/user-attachments/assets/426a5d21-b3dc-4878-bcd5-c43c5eb10c33" />
+
+### UML-диаграммы
+
+- Диаграмма пакетов
+<img width="598" height="523" alt="изображение" src="https://github.com/user-attachments/assets/f0437d20-44c1-494d-9413-be199c88fa93" />
+- Диаграмма развертывания
+<img width="976" height="669" alt="изображение" src="https://github.com/user-attachments/assets/c83030d6-5827-47fd-bb6c-1421d2022e2c" />
+- Диаграмма вариантов использования
+<img width="900" height="926" alt="изображение" src="https://github.com/user-attachments/assets/f0f773df-da2d-4e53-892c-b5cb990c7b94" />
+- Диаграмма состояний
+<img width="595" height="906" alt="изображение" src="https://github.com/user-attachments/assets/5fb533d9-5e53-4c11-89bb-f2ecce2535ed" />
+- Диаграмма последовательности
+<img width="737" height="1148" alt="изображение" src="https://github.com/user-attachments/assets/47dbd174-eb04-4d4f-866d-9209f4a048d3" />
+- Диаграмма активности
+<img width="582" height="935" alt="изображение" src="https://github.com/user-attachments/assets/705933aa-d105-488a-8a9b-a9d7e70d0b16" />
+
 
 ---
 
@@ -194,7 +211,18 @@
 
 ### UML-диаграммы
 
-Представить все UML-диаграммы , которые позволят более точно понять структуру и детали реализации ПС
+- Диаграмма пакетов
+<img width="598" height="523" alt="изображение" src="https://github.com/user-attachments/assets/f0437d20-44c1-494d-9413-be199c88fa93" />
+- Диаграмма развертывания
+<img width="976" height="669" alt="изображение" src="https://github.com/user-attachments/assets/c83030d6-5827-47fd-bb6c-1421d2022e2c" />
+- Диаграмма вариантов использования
+<img width="900" height="926" alt="изображение" src="https://github.com/user-attachments/assets/f0f773df-da2d-4e53-892c-b5cb990c7b94" />
+- Диаграмма состояний
+<img width="595" height="906" alt="изображение" src="https://github.com/user-attachments/assets/5fb533d9-5e53-4c11-89bb-f2ecce2535ed" />
+- Диаграмма последовательности
+<img width="737" height="1148" alt="изображение" src="https://github.com/user-attachments/assets/47dbd174-eb04-4d4f-866d-9209f4a048d3" />
+- Диаграмма активности
+<img width="582" height="935" alt="изображение" src="https://github.com/user-attachments/assets/705933aa-d105-488a-8a9b-a9d7e70d0b16" />
 
 ### Спецификация API
 
