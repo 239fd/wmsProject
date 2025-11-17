@@ -355,13 +355,103 @@ IP-адресе и User-Agent’е,
 
 ## **Установка и  запуск**
 
+Полная инструкция по развертыванию системы представлена в документе [DEPLOYMENT.md](./DEPLOYMENT.md).
+
 ### Манифесты для сборки docker образов
 
-Представить весь код манифестов или ссылки на файлы с ними (при необходимости снабдить комментариями)
+Docker образы строятся для каждого микросервиса отдельно. Ниже представлены ссылки на Dockerfile для всех компонентов системы:
+
+#### Backend микросервисы
+- **API Gateway**: [backend/api-gateway/Dockerfile](./backend/api-gateway/Dockerfile)
+- **Eureka Server**: [backend/eureka-server/Dockerfile](./backend/eureka-server/Dockerfile)
+- **SSO Service**: [backend/SSOService/Dockerfile](./backend/SSOService/Dockerfile)
+- **Organization Service**: [backend/organization-service/Dockerfile](./backend/organization-service/Dockerfile)
+- **Product Service**: [backend/product-service/Dockerfile](./backend/product-service/Dockerfile)
+- **Warehouse Service**: [backend/warehouse-service/Dockerfile](./backend/warehouse-service/Dockerfile)
+- **Document Service**: [backend/document-service/Dockerfile](./backend/document-service/Dockerfile)
+
+#### Frontend
+- **React Application**: [client/Dockerfile](./client/Dockerfile)
+
+#### Docker Compose
+Для локальной разработки и быстрого развертывания:
+- **Docker Compose**: [docker-compose.yml](./docker-compose.yml)
+- **Monitoring Stack**: [monitoring/docker-compose.monitoring.yml](./monitoring/docker-compose.monitoring.yml)
+
+#### Скрипты развертывания Docker
+- **Развертывание**: [deploy-docker.ps1](./deploy-docker.ps1) - автоматическая сборка и запуск всех контейнеров
+- **Очистка**: [cleanup-docker.ps1](./cleanup-docker.ps1) - остановка и удаление контейнеров
 
 ### Манифесты для развертывания k8s кластера
 
-Представить весь код манифестов или ссылки на файлы с ними (при необходимости снабдить комментариями)
+Kubernetes манифесты организованы в директории `k8s/` и применяются в определенной последовательности:
+
+#### Основные манифесты (применяются по порядку)
+
+1. **Namespace**: [k8s/00-namespace.yaml](./k8s/00-namespace.yaml)
+   - Создание изолированного пространства имен `wms` для всех ресурсов системы
+
+2. **Storage**: [k8s/01-storage.yaml](./k8s/01-storage.yaml)
+   - PersistentVolumes и PersistentVolumeClaims для хранения данных БД
+   - StorageClass конфигурация
+
+3. **Secrets**: [k8s/02-secrets.yaml](./k8s/02-secrets.yaml)
+   - Учетные данные для баз данных (PostgreSQL)
+   - Пароли и ключи доступа (закодированы в Base64)
+
+4. **Databases**: [k8s/03-databases.yaml](./k8s/03-databases.yaml)
+   - StatefulSets для PostgreSQL (4 экземпляра: user_db, organization_db, product_db, warehouse_db)
+   - StatefulSet для Redis (кеширование и сессии)
+   - Services для доступа к БД
+
+5. **Backend Services**: [k8s/04-backend.yaml](./k8s/04-backend.yaml)
+   - Deployments для всех микросервисов (Eureka, API Gateway, SSO, Organization, Product, Warehouse, Document)
+   - Services (ClusterIP) для внутреннего взаимодействия
+   - ConfigMaps с настройками приложений
+
+6. **Infrastructure**: [k8s/05-infrastructure.yaml](./k8s/05-infrastructure.yaml)
+   - RabbitMQ (брокер сообщений)
+   - Prometheus (мониторинг метрик)
+   - Grafana (визуализация)
+   - Loki (централизованное логирование)
+   - OpenTelemetry Collector (трассировка)
+
+7. **Ingress**: [k8s/06-ingress.yaml](./k8s/06-ingress.yaml)
+   - Правила маршрутизации внешнего трафика
+   - Настройка доступа к API Gateway и Frontend
+
+8. **Autoscaling**: [k8s/07-autoscaling.yaml](./k8s/07-autoscaling.yaml)
+   - HorizontalPodAutoscaler для автоматического масштабирования микросервисов
+   - Настройки min/max реплик и метрики для триггеров
+
+9. **Network Policies**: [k8s/08-network-policies.yaml](./k8s/08-network-policies.yaml)
+   - Правила сетевой изоляции между компонентами
+   - Ограничение трафика для повышения безопасности
+
+10. **Frontend**: [k8s/09-frontend.yaml](./k8s/09-frontend.yaml)
+    - Deployment для React приложения
+    - Service (LoadBalancer/NodePort) для доступа к UI
+
+#### Скрипты развертывания Kubernetes
+
+- **Автоматическое развертывание**: [deploy-k8s.ps1](./deploy-k8s.ps1)
+  - Полностью автоматизированный процесс развертывания
+  - Сборка Docker образов
+  - Применение всех манифестов в правильной последовательности
+  - Инициализация схем баз данных
+  - Проверка готовности компонентов
+
+- **Проброс портов**: [start-port-forwards.ps1](./start-port-forwards.ps1)
+  - Автоматический проброс портов для локального доступа к сервисам
+  - Доступ к Frontend, API Gateway, Grafana, Prometheus, RabbitMQ
+
+- **Остановка пробросов**: [stop-port-forwards.ps1](./stop-port-forwards.ps1)
+  - Остановка всех активных port-forward процессов
+
+- **Очистка кластера**: [cleanup-k8s.ps1](./cleanup-k8s.ps1)
+  - Удаление всех ресурсов WMS из кластера
+  - Очистка PersistentVolumes
+  - Удаление node labels
 
 ---
 
