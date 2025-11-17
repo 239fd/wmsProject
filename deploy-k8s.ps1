@@ -1,6 +1,7 @@
 Write-Host "=== WMS Project - Kubernetes Deployment ===" -ForegroundColor Cyan
 Write-Host "=== For 4-node cluster: Data Storage | Backend | Frontend | Infrastructure ===" -ForegroundColor Cyan
 Write-Host "=== NOTE: Storage Node (DB+Redis) separate from Infrastructure Node (RabbitMQ+Monitoring) ===" -ForegroundColor Yellow
+Write-Host "=== For 4-node cluster: Storage | Backend | Frontend | Infrastructure ===" -ForegroundColor Cyan
 Write-Host ""
 
 $ErrorActionPreference = "Stop"
@@ -54,6 +55,7 @@ Write-Host ""
 Write-Host "[4/10] Configuring node labels..." -ForegroundColor Yellow
 if ($singleNode) {
     Write-Host "  Single-node: applying all role labels..." -ForegroundColor Yellow
+    kubectl label nodes --all node-role.storage=true --overwrite
     kubectl label nodes --all node-role.data-storage=true --overwrite
     kubectl label nodes --all node-role.backend=true --overwrite
     kubectl label nodes --all node-role.frontend=true --overwrite
@@ -61,6 +63,10 @@ if ($singleNode) {
 } else {
     Write-Host "  Multi-node cluster detected." -ForegroundColor Green
     Write-Host "  Please ensure nodes are labeled with appropriate roles:" -ForegroundColor Yellow
+    Write-Host "    kubectl label nodes [node-name] node-role.storage=true" -ForegroundColor White
+    Write-Host "    kubectl label nodes [node-name] node-role.backend=true" -ForegroundColor White
+    Write-Host "    kubectl label nodes [node-name] node-role.frontend=true" -ForegroundColor White
+    Write-Host "    kubectl label nodes [node-name] node-role.infrastructure=true" -ForegroundColor White
     Write-Host "    kubectl label nodes [storage-node] node-role.data-storage=true" -ForegroundColor White
     Write-Host "    kubectl label nodes [backend-node] node-role.backend=true" -ForegroundColor White
     Write-Host "    kubectl label nodes [frontend-node] node-role.frontend=true" -ForegroundColor White
