@@ -1,0 +1,245 @@
+version: "3.8"
+
+services:
+  postgres-sso:
+    image: postgres:15
+    container_name: postgres-sso
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: sso_service_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data_sso:/var/lib/postgresql/data
+      - ./sql-scripts/userDB.sql:/docker-entrypoint-initdb.d/userDB.sql:ro
+    networks:
+      - wms-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-org:
+    image: postgres:15
+    container_name: postgres-org
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: organization_service_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - pg_data_org:/var/lib/postgresql/data
+      - ./sql-scripts/organizationDB.sql:/docker-entrypoint-initdb.d/organizationDB.sql:ro
+    networks:
+      - wms-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-warehouse:
+    image: postgres:15
+    container_name: postgres-warehouse
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: warehouse_service_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5434:5432"
+    volumes:
+      - pg_data_warehouse:/var/lib/postgresql/data
+      - ./sql-scripts/warehouseDB.sql:/docker-entrypoint-initdb.d/warehouseDB.sql:ro
+    networks:
+      - wms-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-product:
+    image: postgres:15
+    container_name: postgres-product
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: product_service_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5435:5432"
+    volumes:
+      - pg_data_product:/var/lib/postgresql/data
+      - ./sql-scripts/productDB.sql:/docker-entrypoint-initdb.d/productDB.sql:ro
+    networks:
+      - wms-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - wms-network
+
+  # Backend сервисы
+  eureka-server:
+    build:
+      context: ./backend/eureka-server
+      dockerfile: Dockerfile
+    container_name: eureka-server
+    restart: unless-stopped
+    ports:
+      - "8761:8761"
+    networks:
+      - wms-network
+
+  api-gateway:
+    build:
+      context: ./backend/api-gateway
+      dockerfile: Dockerfile
+    container_name: api-gateway
+    restart: unless-stopped
+    ports:
+      - "8765:8765"
+    environment:
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka
+    depends_on:
+      - eureka-server
+    networks:
+      - wms-network
+
+  sso-service:
+    build:
+      context: ./backend/SSOService
+      dockerfile: Dockerfile
+    container_name: sso-service
+    restart: unless-stopped
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-sso:5432/sso_service_db
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_REDIS_HOST: redis
+      SPRING_REDIS_PORT: 6379
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka
+    depends_on:
+      postgres-sso:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      eureka-server:
+        condition: service_started
+    networks:
+      - wms-network
+
+  organization-service:
+    build:
+      context: ./backend/organization-service
+      dockerfile: Dockerfile
+    container_name: organization-service
+    restart: unless-stopped
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-org:5432/organization_service_db
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka
+    depends_on:
+      postgres-org:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+    networks:
+      - wms-network
+
+  product-service:
+    build:
+      context: ./backend/product-service
+      dockerfile: Dockerfile
+    container_name: product-service
+    restart: unless-stopped
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-product:5432/product_service_db
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka
+    depends_on:
+      postgres-product:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+    networks:
+      - wms-network
+
+  warehouse-service:
+    build:
+      context: ./backend/warehouse-service
+      dockerfile: Dockerfile
+    container_name: warehouse-service
+    restart: unless-stopped
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-warehouse:5432/warehouse_service_db
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka
+    depends_on:
+      postgres-warehouse:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+    networks:
+      - wms-network
+
+  document-service:
+    build:
+      context: ./backend/document-service
+      dockerfile: Dockerfile
+    container_name: document-service
+    restart: unless-stopped
+    environment:
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka
+    depends_on:
+      eureka-server:
+        condition: service_started
+    networks:
+      - wms-network
+
+  # Frontend
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: wms-client
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - api-gateway
+    networks:
+      - wms-network
+
+networks:
+  wms-network:
+    driver: bridge
+
+volumes:
+  pg_data_sso:
+  pg_data_org:
+  pg_data_warehouse:
+  pg_data_product:
+  redis_data:
+
