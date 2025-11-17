@@ -28,6 +28,7 @@ kubectl delete pv --all --ignore-not-found=true
 Write-Host ""
 Write-Host "[4/4] Removing node labels..." -ForegroundColor Yellow
 kubectl label nodes --all node-role.data-storage- 2>$null
+kubectl label nodes --all node-role.storage- 2>$null
 kubectl label nodes --all node-role.backend- 2>$null
 kubectl label nodes --all node-role.frontend- 2>$null
 kubectl label nodes --all node-role.infrastructure- 2>$null
