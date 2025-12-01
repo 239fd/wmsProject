@@ -1,9 +1,0 @@
-rootProject.name = 'warehouseMicroservices'
-
-includeBuild 'eureka-server'
-includeBuild 'api-gateway'
-includeBuild 'SSOService'
-includeBuild 'document-service'
-includeBuild 'warehouse-service'
-includeBuild 'organization-service'
-includeBuild 'product-service'
