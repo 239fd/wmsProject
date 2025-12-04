@@ -337,7 +337,175 @@ IP-адресе и User-Agent’е,
 
 ### Оценка качества кода
 
-Используя показатели качества и метрики кода, оценить его качество
+Для обеспечения высокого качества программного кода в проекте реализован комплексный подход, включающий автоматизированные инструменты статического анализа, проверки стиля и измерения покрытия тестами.
+
+#### 1. Code Style: Соответствие стандартам оформления кода
+
+В проекте реализована автоматическая проверка и форматирование кода с использованием следующих инструментов:
+
+**Checkstyle** — инструмент статического анализа для проверки соответствия кода стандартам оформления Java.
+
+Конфигурация: `config/checkstyle/checkstyle.xml`
+
+Основные проверяемые правила:
+- Максимальная длина строки — 200 символов
+- Именование пакетов, классов, методов и переменных согласно Java Code Conventions
+- Корректное использование пробелов и отступов
+- Порядок модификаторов доступа
+- Проверка Unicode-символов и escape-последовательностей
+
+```xml
+<module name="LineLength">
+    <property name="max" value="200"/>
+</module>
+<module name="PackageName">
+    <property name="format" value="^[a-z]+(\.[a-z][a-z0-9]*)*$"/>
+</module>
+<module name="TypeName"/>
+<module name="MemberName">
+    <property name="format" value="^[a-z][a-zA-Z0-9]*$"/>
+</module>
+```
+
+**Spotless** — плагин для автоматического форматирования кода.
+
+```groovy
+spotless {
+    java {
+        googleJavaFormat('1.17.0').aosp().reflowLongStrings()
+        removeUnusedImports()
+        trimTrailingWhitespace()
+        endWithNewline()
+        indentWithSpaces(4)
+        formatAnnotations()
+    }
+}
+```
+
+#### 2. Сложность кода: Статический анализ и поиск потенциальных проблем
+
+**PMD** — инструмент для анализа исходного кода на наличие потенциальных ошибок, неоптимального кода и нарушений лучших практик.
+
+Конфигурация: `config/pmd/pmd-ruleset.xml`
+
+Проверяемые категории:
+- **Best Practices** — соответствие лучшим практикам разработки
+- **Code Style** — стилистические рекомендации
+- **Design** — проверка архитектурных решений
+- **Error Prone** — поиск потенциальных ошибок
+- **Multithreading** — анализ многопоточного кода
+- **Performance** — оптимизация производительности
+- **Security** — проверка безопасности
+
+```xml
+<rule ref="category/java/bestpractices.xml"/>
+<rule ref="category/java/design.xml"/>
+<rule ref="category/java/errorprone.xml"/>
+<rule ref="category/java/security.xml"/>
+<rule ref="category/java/performance.xml"/>
+```
+
+**SpotBugs** — инструмент для поиска потенциальных багов в Java-коде методом статического анализа байт-кода.
+
+```groovy
+spotbugs {
+    toolVersion = '4.8.3'
+    ignoreFailures = true
+}
+```
+
+Генерируемые отчёты:
+- HTML-отчёт: `build/reports/spotbugs/main/spotbugs.html`
+- XML-отчёт: `build/reports/spotbugs/main/spotbugs.xml`
+
+**CPD (Copy-Paste Detector)** — инструмент для обнаружения дублирования кода, интегрированный в PMD 7.0.
+
+#### 3. Безопасность: Проверка уязвимостей
+
+Безопасность кода обеспечивается на нескольких уровнях:
+
+**PMD Security Rules** — набор правил для выявления уязвимостей:
+```xml
+<rule ref="category/java/security.xml"/>
+```
+
+Проверяемые уязвимости:
+- Hardcoded credentials (жёстко заданные пароли)
+- SQL Injection
+- Command Injection
+- Insecure Random
+
+**SpotBugs Security** — дополнительные проверки безопасности на уровне байт-кода.
+
+**Защита от SQL Injection:**
+В проекте используется Spring Data JPA с параметризованными запросами, что исключает возможность SQL-инъекций:
+
+```java
+@Query("SELECT u FROM UserReadModel u WHERE u.email = :email AND u.provider = :provider")
+Optional<UserReadModel> findByEmailAndProvider(@Param("email") String email, @Param("provider") String provider);
+```
+
+**Отсутствие хардкода паролей:**
+Все sensitive-данные хранятся в переменных окружения или конфигурационных файлах, исключённых из системы контроля версий.
+
+#### 4. Покрытие тестами: JaCoCo
+
+**JaCoCo (Java Code Coverage)** — инструмент для измерения покрытия кода тестами.
+
+```groovy
+jacoco {
+    toolVersion = "0.8.11"
+}
+
+jacocoTestCoverageVerification {
+    violationRules {
+        rule {
+            limit {
+                minimum = 0.50  // Минимальное покрытие 50%
+            }
+        }
+    }
+}
+```
+
+Генерируемые отчёты:
+- HTML-отчёт: `build/reports/jacoco/test/html/index.html`
+- XML-отчёт: `build/reports/jacoco/test/jacocoTestReport.xml`
+
+**Покрытие тестами по сервисам:**
+
+В проекте реализованы следующие виды тестов:
+
+| Сервис | Unit-тесты | Интеграционные тесты |
+|--------|------------|---------------------|
+| warehouse-service | WarehouseServiceTest, RackServiceTest, WarehouseAnalyticsServiceTest | WarehouseControllerIntegrationTest |
+| organization-service | OrganizationServiceTest, EmployeeManagementServiceTest, EmployeeAnalyticsServiceTest | OrganizationControllerIntegrationTest, EmployeeControllerIntegrationTest |
+| product-service | — | ProductControllerIntegrationTest |
+| document-service | — | DocumentControllerIntegrationTest |
+
+#### 5. Запуск проверок качества кода
+
+Для запуска всех проверок качества кода используются следующие команды:
+
+```bash
+# Запуск всех проверок для конкретного сервиса
+./gradlew :warehouse-service:codeQuality
+
+# Запуск Checkstyle
+./gradlew checkstyleMain
+
+# Запуск PMD
+./gradlew pmdMain
+
+# Запуск SpotBugs
+./gradlew spotbugsMain
+
+# Запуск тестов с покрытием
+./gradlew test jacocoTestReport
+
+# Форматирование кода
+./gradlew spotlessApply
+```
 
 ---
 

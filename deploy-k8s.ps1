@@ -124,7 +124,7 @@ while (-not $ready -and $attempts -lt $maxAttempts) {
 
 if ($ready -and (Test-Path ".\sql-scripts\userDB.sql")) {
     Write-Host "  Initializing SSO database schema..." -ForegroundColor Cyan
-    Get-Content ".\sql-scripts\userDB.sql" | kubectl exec -i -n wms $ssoPod -- psql -U postgres -d sso_db 2>$null
+    Get-Content ".\sql-scripts\userDB.sql" | kubectl exec -i -n wms $ssoPod -- psql -U postgres -d user_db 2>$null
     if ($LASTEXITCODE -eq 0) {
         Write-Host "  [OK] SSO database initialized" -ForegroundColor Green
     } else {
