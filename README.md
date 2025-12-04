@@ -249,12 +249,12 @@
 
 | Сервис | Swagger UI URL | OpenAPI JSON |
 |--------|----------------|--------------|
-| SSO Service | `http://localhost:7777/swagger-ui.html` | `/v3/api-docs` |
-| Organization Service | `http://localhost:8081/swagger-ui.html` | `/v3/api-docs` |
-| Product Service | `http://localhost:8082/swagger-ui.html` | `/v3/api-docs` |
-| Warehouse Service | `http://localhost:8083/swagger-ui.html` | `/v3/api-docs` |
-| Document Service | `http://localhost:8084/swagger-ui.html` | `/v3/api-docs` |
-| API Gateway | `http://localhost:8080/swagger-ui.html` | `/v3/api-docs` |
+| SSO Service | `http://localhost:8000/swagger-ui.html` | `/v3/api-docs` |
+| Organization Service | `http://localhost:8010/swagger-ui.html` | `/v3/api-docs` |
+| Product Service | `http://localhost:8030/swagger-ui.html` | `/v3/api-docs` |
+| Warehouse Service | `http://localhost:8020/swagger-ui.html` | `/v3/api-docs` |
+| Document Service | `http://localhost:8040/swagger-ui.html` | `/v3/api-docs` |
+| API Gateway | `http://localhost:8765/swagger-ui.html` | `/v3/api-docs` |
 
 #### Postman коллекция
 
