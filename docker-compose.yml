@@ -1,90 +1,92 @@
 version: "3.8"
 
 services:
+  # ==================== DATABASES ====================
   postgres-sso:
-    image: postgres:15
+    image: postgres:16-alpine
     container_name: postgres-sso
     restart: unless-stopped
     environment:
-      POSTGRES_DB: sso_service_db
+      POSTGRES_DB: user_db
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
       - "5432:5432"
     volumes:
       - pg_data_sso:/var/lib/postgresql/data
-      - ./sql-scripts/userDB.sql:/docker-entrypoint-initdb.d/userDB.sql:ro
+      - ./sql-scripts/userDB.sql:/docker-entrypoint-initdb.d/01-userDB.sql:ro
     networks:
       - wms-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d user_db"]
       interval: 10s
       timeout: 5s
       retries: 5
 
   postgres-org:
-    image: postgres:15
+    image: postgres:16-alpine
     container_name: postgres-org
     restart: unless-stopped
     environment:
-      POSTGRES_DB: organization_service_db
+      POSTGRES_DB: organization_db
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
       - "5433:5432"
     volumes:
       - pg_data_org:/var/lib/postgresql/data
-      - ./sql-scripts/organizationDB.sql:/docker-entrypoint-initdb.d/organizationDB.sql:ro
+      - ./sql-scripts/organizationDB.sql:/docker-entrypoint-initdb.d/01-organizationDB.sql:ro
     networks:
       - wms-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d organization_db"]
       interval: 10s
       timeout: 5s
       retries: 5
 
   postgres-warehouse:
-    image: postgres:15
+    image: postgres:16-alpine
     container_name: postgres-warehouse
     restart: unless-stopped
     environment:
-      POSTGRES_DB: warehouse_service_db
+      POSTGRES_DB: warehouse_db
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
       - "5434:5432"
     volumes:
       - pg_data_warehouse:/var/lib/postgresql/data
-      - ./sql-scripts/warehouseDB.sql:/docker-entrypoint-initdb.d/warehouseDB.sql:ro
+      - ./sql-scripts/warehouseDB.sql:/docker-entrypoint-initdb.d/01-warehouseDB.sql:ro
     networks:
       - wms-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d warehouse_db"]
       interval: 10s
       timeout: 5s
       retries: 5
 
   postgres-product:
-    image: postgres:15
+    image: postgres:16-alpine
     container_name: postgres-product
     restart: unless-stopped
     environment:
-      POSTGRES_DB: product_service_db
+      POSTGRES_DB: product_db
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
       - "5435:5432"
     volumes:
       - pg_data_product:/var/lib/postgresql/data
-      - ./sql-scripts/productDB.sql:/docker-entrypoint-initdb.d/productDB.sql:ro
+      - ./sql-scripts/productDB.sql:/docker-entrypoint-initdb.d/01-productDB.sql:ro
     networks:
       - wms-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d product_db"]
       interval: 10s
       timeout: 5s
       retries: 5
 
+  # ==================== INFRASTRUCTURE ====================
   redis:
     image: redis:7-alpine
     container_name: redis
@@ -96,8 +98,33 @@ services:
     command: redis-server --appendonly yes
     networks:
       - wms-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  # Backend сервисы
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    container_name: rabbitmq
+    restart: unless-stopped
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - wms-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ==================== BACKEND SERVICES ====================
   eureka-server:
     build:
       context: ./backend/eureka-server
@@ -108,6 +135,12 @@ services:
       - "8761:8761"
     networks:
       - wms-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8761/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
 
   api-gateway:
     build:
@@ -119,10 +152,18 @@ services:
       - "8765:8765"
     environment:
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka
+      SSO_SERVICE_URL: http://sso-service:8000
     depends_on:
-      - eureka-server
+      eureka-server:
+        condition: service_healthy
     networks:
       - wms-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8765/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
 
   sso-service:
     build:
@@ -130,22 +171,33 @@ services:
       dockerfile: Dockerfile
     container_name: sso-service
     restart: unless-stopped
+    ports:
+      - "8000:8000"
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-sso:5432/sso_service_db
+      SERVER_PORT: 8000
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-sso:5432/user_db
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
-      SPRING_REDIS_HOST: redis
-      SPRING_REDIS_PORT: 6379
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka
+      EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
     depends_on:
       postgres-sso:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
       eureka-server:
-        condition: service_started
+        condition: service_healthy
     networks:
       - wms-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
 
   organization-service:
     build:
@@ -153,18 +205,35 @@ services:
       dockerfile: Dockerfile
     container_name: organization-service
     restart: unless-stopped
+    ports:
+      - "8010:8010"
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-org:5432/organization_service_db
+      SERVER_PORT: 8010
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-org:5432/organization_db
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: guest
+      SPRING_RABBITMQ_PASSWORD: guest
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka
+      EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
     depends_on:
       postgres-org:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
       eureka-server:
-        condition: service_started
+        condition: service_healthy
     networks:
       - wms-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8010/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
 
   product-service:
     build:
@@ -172,18 +241,35 @@ services:
       dockerfile: Dockerfile
     container_name: product-service
     restart: unless-stopped
+    ports:
+      - "8030:8030"
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-product:5432/product_service_db
+      SERVER_PORT: 8030
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-product:5432/product_db
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: guest
+      SPRING_RABBITMQ_PASSWORD: guest
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka
+      EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
     depends_on:
       postgres-product:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
       eureka-server:
-        condition: service_started
+        condition: service_healthy
     networks:
       - wms-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8030/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
 
   warehouse-service:
     build:
@@ -191,18 +277,35 @@ services:
       dockerfile: Dockerfile
     container_name: warehouse-service
     restart: unless-stopped
+    ports:
+      - "8020:8020"
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-warehouse:5432/warehouse_service_db
+      SERVER_PORT: 8020
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-warehouse:5432/warehouse_db
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: guest
+      SPRING_RABBITMQ_PASSWORD: guest
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka
+      EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
     depends_on:
       postgres-warehouse:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
       eureka-server:
-        condition: service_started
+        condition: service_healthy
     networks:
       - wms-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8020/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
 
   document-service:
     build:
@@ -210,15 +313,25 @@ services:
       dockerfile: Dockerfile
     container_name: document-service
     restart: unless-stopped
+    ports:
+      - "8040:8040"
     environment:
+      SERVER_PORT: 8040
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka
+      EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
     depends_on:
       eureka-server:
-        condition: service_started
+        condition: service_healthy
     networks:
       - wms-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8040/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
 
-  # Frontend
+  # ==================== FRONTEND ====================
   client:
     build:
       context: ./client
@@ -228,7 +341,8 @@ services:
     ports:
       - "3000:80"
     depends_on:
-      - api-gateway
+      api-gateway:
+        condition: service_healthy
     networks:
       - wms-network
 
@@ -242,4 +356,5 @@ volumes:
   pg_data_warehouse:
   pg_data_product:
   redis_data:
+  rabbitmq_data:
 

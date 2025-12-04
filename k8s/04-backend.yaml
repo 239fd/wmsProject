@@ -1,3 +1,4 @@
+# ==================== EUREKA SERVER ====================
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -13,15 +14,20 @@ spec:
       labels:
         app: eureka-server
         tier: backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8761"
+        prometheus.io/path: "/actuator/prometheus"
     spec:
-      nodeSelector:
-        node-role.backend: "true"
       containers:
       - name: eureka-server
-        image: eureka-server:latest
-        imagePullPolicy: Never
+        image: wms/eureka-server:latest
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8761
+        env:
+        - name: SERVER_PORT
+          value: "8761"
         resources:
           requests:
             memory: "512Mi"
@@ -29,6 +35,18 @@ spec:
           limits:
             memory: "1Gi"
             cpu: "500m"
+        readinessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8761
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8761
+          initialDelaySeconds: 60
+          periodSeconds: 30
 ---
 apiVersion: v1
 kind: Service
@@ -43,6 +61,7 @@ spec:
   selector:
     app: eureka-server
 ---
+# ==================== API GATEWAY ====================
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -58,18 +77,24 @@ spec:
       labels:
         app: api-gateway
         tier: backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8765"
+        prometheus.io/path: "/actuator/prometheus"
     spec:
-      nodeSelector:
-        node-role.backend: "true"
       containers:
       - name: api-gateway
-        image: api-gateway:latest
-        imagePullPolicy: Never
+        image: wms/api-gateway:latest
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8765
         env:
+        - name: SERVER_PORT
+          value: "8765"
         - name: EUREKA_CLIENT_SERVICEURL_DEFAULTZONE
           value: "http://eureka-server:8761/eureka"
+        - name: SSO_SERVICE_URL
+          value: "http://sso-service:8000"
         resources:
           requests:
             memory: "512Mi"
@@ -77,6 +102,18 @@ spec:
           limits:
             memory: "1Gi"
             cpu: "500m"
+        readinessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8765
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8765
+          initialDelaySeconds: 60
+          periodSeconds: 30
 ---
 apiVersion: v1
 kind: Service
@@ -92,234 +129,7 @@ spec:
   selector:
     app: api-gateway
 ---
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: organization-service
-  namespace: wms
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: organization-service
-  template:
-    metadata:
-      labels:
-        app: organization-service
-        tier: backend
-    spec:
-      nodeSelector:
-        node-role.backend: "true"
-      containers:
-      - name: organization-service
-        image: organization-service:latest
-        imagePullPolicy: Never
-        ports:
-        - containerPort: 8010
-        env:
-        - name: SPRING_DATASOURCE_URL
-          value: "jdbc:postgresql://postgres-organization:5432/organization_db"
-        - name: SPRING_DATASOURCE_USERNAME
-          valueFrom:
-            secretKeyRef:
-              name: db-secrets
-              key: organization-db-user
-        - name: SPRING_DATASOURCE_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: db-secrets
-              key: organization-db-password
-        - name: EUREKA_CLIENT_SERVICEURL_DEFAULTZONE
-          value: "http://eureka-server:8761/eureka"
-        resources:
-          requests:
-            memory: "512Mi"
-            cpu: "250m"
-          limits:
-            memory: "1Gi"
-            cpu: "500m"
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: organization-service
-  namespace: wms
-spec:
-  type: ClusterIP
-  ports:
-  - port: 8010
-    targetPort: 8010
-  selector:
-    app: organization-service
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: product-service
-  namespace: wms
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: product-service
-  template:
-    metadata:
-      labels:
-        tier: backend
-        app: product-service
-    spec:
-      nodeSelector:
-        node-role.backend: "true"
-      containers:
-      - name: product-service
-        image: product-service:latest
-        imagePullPolicy: Never
-        ports:
-        - containerPort: 8030
-        env:
-        - name: SPRING_DATASOURCE_URL
-          value: "jdbc:postgresql://postgres-product:5432/product_db"
-        - name: SPRING_DATASOURCE_USERNAME
-          valueFrom:
-            secretKeyRef:
-              name: db-secrets
-              key: product-db-user
-        - name: SPRING_DATASOURCE_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: db-secrets
-              key: product-db-password
-        - name: EUREKA_CLIENT_SERVICEURL_DEFAULTZONE
-          value: "http://eureka-server:8761/eureka"
-        resources:
-          requests:
-            memory: "512Mi"
-            cpu: "250m"
-          limits:
-            memory: "1Gi"
-            cpu: "500m"
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: product-service
-  namespace: wms
-spec:
-  type: ClusterIP
-  ports:
-  - port: 8030
-    targetPort: 8030
-  selector:
-    app: product-service
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: warehouse-service
-  namespace: wms
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: warehouse-service
-  template:
-    metadata:
-      labels:
-        app: warehouse-service
-        tier: backend
-    spec:
-      nodeSelector:
-        node-role.backend: "true"
-      containers:
-      - name: warehouse-service
-        image: warehouse-service:latest
-        imagePullPolicy: Never
-        ports:
-        - containerPort: 8020
-        env:
-        - name: SPRING_DATASOURCE_URL
-          value: "jdbc:postgresql://postgres-warehouse:5432/warehouse_db"
-        - name: SPRING_DATASOURCE_USERNAME
-          valueFrom:
-            secretKeyRef:
-              name: db-secrets
-              key: warehouse-db-user
-        - name: SPRING_DATASOURCE_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: db-secrets
-              key: warehouse-db-password
-        - name: EUREKA_CLIENT_SERVICEURL_DEFAULTZONE
-          value: "http://eureka-server:8761/eureka"
-        resources:
-          requests:
-            memory: "512Mi"
-            cpu: "250m"
-          limits:
-            memory: "1Gi"
-            cpu: "500m"
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: warehouse-service
-  namespace: wms
-spec:
-  type: ClusterIP
-  ports:
-  - port: 8020
-    targetPort: 8020
-  selector:
-    app: warehouse-service
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: document-service
-  namespace: wms
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: document-service
-  template:
-    metadata:
-      labels:
-        app: document-service
-        tier: backend
-    spec:
-      nodeSelector:
-        node-role.backend: "true"
-      containers:
-      - name: document-service
-        image: document-service:latest
-        imagePullPolicy: Never
-        ports:
-        - containerPort: 8040
-        env:
-        - name: EUREKA_CLIENT_SERVICEURL_DEFAULTZONE
-          value: "http://eureka-server:8761/eureka"
-        resources:
-          requests:
-            memory: "512Mi"
-            cpu: "250m"
-          limits:
-            memory: "1Gi"
-            cpu: "500m"
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: document-service
-  namespace: wms
-spec:
-  type: ClusterIP
-  ports:
-  - port: 8040
-    targetPort: 8040
-  selector:
-    app: document-service
----
+# ==================== SSO SERVICE ====================
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -335,18 +145,22 @@ spec:
       labels:
         app: sso-service
         tier: backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/actuator/prometheus"
     spec:
-      nodeSelector:
-        node-role.backend: "true"
       containers:
       - name: sso-service
-        image: sso-service:latest
-        imagePullPolicy: Never
+        image: wms/sso-service:latest
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8000
         env:
+        - name: SERVER_PORT
+          value: "8000"
         - name: SPRING_DATASOURCE_URL
-          value: "jdbc:postgresql://postgres-sso:5432/sso_db"
+          value: "jdbc:postgresql://postgres-sso:5432/user_db"
         - name: SPRING_DATASOURCE_USERNAME
           valueFrom:
             secretKeyRef:
@@ -357,10 +171,14 @@ spec:
             secretKeyRef:
               name: db-secrets
               key: sso-db-password
-        - name: SPRING_REDIS_HOST
+        - name: SPRING_DATA_REDIS_HOST
           value: "redis"
+        - name: SPRING_DATA_REDIS_PORT
+          value: "6379"
         - name: EUREKA_CLIENT_SERVICEURL_DEFAULTZONE
           value: "http://eureka-server:8761/eureka"
+        - name: EUREKA_INSTANCE_PREFER_IP_ADDRESS
+          value: "true"
         resources:
           requests:
             memory: "512Mi"
@@ -368,6 +186,18 @@ spec:
           limits:
             memory: "1Gi"
             cpu: "500m"
+        readinessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8000
+          initialDelaySeconds: 40
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8000
+          initialDelaySeconds: 80
+          periodSeconds: 30
 ---
 apiVersion: v1
 kind: Service
@@ -381,5 +211,349 @@ spec:
     targetPort: 8000
   selector:
     app: sso-service
-
-
+---
+# ==================== ORGANIZATION SERVICE ====================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: organization-service
+  namespace: wms
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: organization-service
+  template:
+    metadata:
+      labels:
+        app: organization-service
+        tier: backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8010"
+        prometheus.io/path: "/actuator/prometheus"
+    spec:
+      containers:
+      - name: organization-service
+        image: wms/organization-service:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8010
+        env:
+        - name: SERVER_PORT
+          value: "8010"
+        - name: SPRING_DATASOURCE_URL
+          value: "jdbc:postgresql://postgres-organization:5432/organization_db"
+        - name: SPRING_DATASOURCE_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: db-secrets
+              key: organization-db-user
+        - name: SPRING_DATASOURCE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-secrets
+              key: organization-db-password
+        - name: SPRING_RABBITMQ_HOST
+          value: "rabbitmq"
+        - name: SPRING_RABBITMQ_PORT
+          value: "5672"
+        - name: SPRING_RABBITMQ_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: rabbitmq-secret
+              key: rabbitmq-user
+        - name: SPRING_RABBITMQ_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: rabbitmq-secret
+              key: rabbitmq-password
+        - name: EUREKA_CLIENT_SERVICEURL_DEFAULTZONE
+          value: "http://eureka-server:8761/eureka"
+        - name: EUREKA_INSTANCE_PREFER_IP_ADDRESS
+          value: "true"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        readinessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8010
+          initialDelaySeconds: 40
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8010
+          initialDelaySeconds: 80
+          periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: organization-service
+  namespace: wms
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8010
+    targetPort: 8010
+  selector:
+    app: organization-service
+---
+# ==================== WAREHOUSE SERVICE ====================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: warehouse-service
+  namespace: wms
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: warehouse-service
+  template:
+    metadata:
+      labels:
+        app: warehouse-service
+        tier: backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8020"
+        prometheus.io/path: "/actuator/prometheus"
+    spec:
+      containers:
+      - name: warehouse-service
+        image: wms/warehouse-service:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8020
+        env:
+        - name: SERVER_PORT
+          value: "8020"
+        - name: SPRING_DATASOURCE_URL
+          value: "jdbc:postgresql://postgres-warehouse:5432/warehouse_db"
+        - name: SPRING_DATASOURCE_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: db-secrets
+              key: warehouse-db-user
+        - name: SPRING_DATASOURCE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-secrets
+              key: warehouse-db-password
+        - name: SPRING_RABBITMQ_HOST
+          value: "rabbitmq"
+        - name: SPRING_RABBITMQ_PORT
+          value: "5672"
+        - name: SPRING_RABBITMQ_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: rabbitmq-secret
+              key: rabbitmq-user
+        - name: SPRING_RABBITMQ_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: rabbitmq-secret
+              key: rabbitmq-password
+        - name: EUREKA_CLIENT_SERVICEURL_DEFAULTZONE
+          value: "http://eureka-server:8761/eureka"
+        - name: EUREKA_INSTANCE_PREFER_IP_ADDRESS
+          value: "true"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        readinessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8020
+          initialDelaySeconds: 40
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8020
+          initialDelaySeconds: 80
+          periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: warehouse-service
+  namespace: wms
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8020
+    targetPort: 8020
+  selector:
+    app: warehouse-service
+---
+# ==================== PRODUCT SERVICE ====================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: product-service
+  namespace: wms
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: product-service
+  template:
+    metadata:
+      labels:
+        app: product-service
+        tier: backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8030"
+        prometheus.io/path: "/actuator/prometheus"
+    spec:
+      containers:
+      - name: product-service
+        image: wms/product-service:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8030
+        env:
+        - name: SERVER_PORT
+          value: "8030"
+        - name: SPRING_DATASOURCE_URL
+          value: "jdbc:postgresql://postgres-product:5432/product_db"
+        - name: SPRING_DATASOURCE_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: db-secrets
+              key: product-db-user
+        - name: SPRING_DATASOURCE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-secrets
+              key: product-db-password
+        - name: SPRING_RABBITMQ_HOST
+          value: "rabbitmq"
+        - name: SPRING_RABBITMQ_PORT
+          value: "5672"
+        - name: SPRING_RABBITMQ_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: rabbitmq-secret
+              key: rabbitmq-user
+        - name: SPRING_RABBITMQ_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: rabbitmq-secret
+              key: rabbitmq-password
+        - name: EUREKA_CLIENT_SERVICEURL_DEFAULTZONE
+          value: "http://eureka-server:8761/eureka"
+        - name: EUREKA_INSTANCE_PREFER_IP_ADDRESS
+          value: "true"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        readinessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8030
+          initialDelaySeconds: 40
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8030
+          initialDelaySeconds: 80
+          periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: product-service
+  namespace: wms
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8030
+    targetPort: 8030
+  selector:
+    app: product-service
+---
+# ==================== DOCUMENT SERVICE ====================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: document-service
+  namespace: wms
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: document-service
+  template:
+    metadata:
+      labels:
+        app: document-service
+        tier: backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8040"
+        prometheus.io/path: "/actuator/prometheus"
+    spec:
+      containers:
+      - name: document-service
+        image: wms/document-service:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8040
+        env:
+        - name: SERVER_PORT
+          value: "8040"
+        - name: EUREKA_CLIENT_SERVICEURL_DEFAULTZONE
+          value: "http://eureka-server:8761/eureka"
+        - name: EUREKA_INSTANCE_PREFER_IP_ADDRESS
+          value: "true"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        readinessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8040
+          initialDelaySeconds: 40
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8040
+          initialDelaySeconds: 80
+          periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: document-service
+  namespace: wms
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8040
+    targetPort: 8040
+  selector:
+    app: document-service

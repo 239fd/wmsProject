@@ -1,24 +1,37 @@
+# ==================== INGRESS ====================
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: wms-ingress
   namespace: wms
   annotations:
-    nginx.ingress.kubernetes.io/rewrite-target: /
     nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
 spec:
   ingressClassName: nginx
   rules:
   - host: wms.local
     http:
       paths:
+      # Frontend
       - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: frontend
+            port:
+              number: 80
+      # API Gateway
+      - path: /api
         pathType: Prefix
         backend:
           service:
             name: api-gateway
             port:
               number: 8765
+      # Eureka Dashboard
       - path: /eureka
         pathType: Prefix
         backend:
@@ -26,6 +39,7 @@ spec:
             name: eureka-server
             port:
               number: 8761
+      # Grafana
       - path: /grafana
         pathType: Prefix
         backend:
@@ -33,6 +47,7 @@ spec:
             name: grafana
             port:
               number: 3000
+      # Prometheus
       - path: /prometheus
         pathType: Prefix
         backend:
@@ -40,4 +55,12 @@ spec:
             name: prometheus
             port:
               number: 9090
+      # RabbitMQ Management
+      - path: /rabbitmq
+        pathType: Prefix
+        backend:
+          service:
+            name: rabbitmq
+            port:
+              number: 15672
 
