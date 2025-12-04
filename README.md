@@ -243,7 +243,24 @@
 
 ### Спецификация API
 
-Представить описание реализованных функциональных возможностей ПС с использованием Open API (можно представить либо полный файл спецификации, либо ссылку на него)
+#### Документация OpenAPI (Swagger)
+
+Все микросервисы предоставляют интерактивную документацию API через **Swagger UI** и спецификацию **OpenAPI 3.0**.
+
+| Сервис | Swagger UI URL | OpenAPI JSON |
+|--------|----------------|--------------|
+| SSO Service | `http://localhost:7777/swagger-ui.html` | `/v3/api-docs` |
+| Organization Service | `http://localhost:8081/swagger-ui.html` | `/v3/api-docs` |
+| Product Service | `http://localhost:8082/swagger-ui.html` | `/v3/api-docs` |
+| Warehouse Service | `http://localhost:8083/swagger-ui.html` | `/v3/api-docs` |
+| Document Service | `http://localhost:8084/swagger-ui.html` | `/v3/api-docs` |
+| API Gateway | `http://localhost:8080/swagger-ui.html` | `/v3/api-docs` |
+
+#### Postman коллекция
+
+Для удобства тестирования API подготовлена коллекция Postman с примерами всех запросов:
+
+**[Скачать Postman коллекцию](./docs/postman/WMS-API-Collection.json)**
 
 ### Безопасность
 
@@ -472,17 +489,6 @@ jacocoTestCoverageVerification {
 - HTML-отчёт: `build/reports/jacoco/test/html/index.html`
 - XML-отчёт: `build/reports/jacoco/test/jacocoTestReport.xml`
 
-**Покрытие тестами по сервисам:**
-
-В проекте реализованы следующие виды тестов:
-
-| Сервис | Unit-тесты | Интеграционные тесты |
-|--------|------------|---------------------|
-| warehouse-service | WarehouseServiceTest, RackServiceTest, WarehouseAnalyticsServiceTest | WarehouseControllerIntegrationTest |
-| organization-service | OrganizationServiceTest, EmployeeManagementServiceTest, EmployeeAnalyticsServiceTest | OrganizationControllerIntegrationTest, EmployeeControllerIntegrationTest |
-| product-service | — | ProductControllerIntegrationTest |
-| document-service | — | DocumentControllerIntegrationTest |
-
 #### 5. Запуск проверок качества кода
 
 Для запуска всех проверок качества кода используются следующие команды:
@@ -511,13 +517,396 @@ jacocoTestCoverageVerification {
 
 ## **Тестирование**
 
+### Описание процесса тестирования
+
+Процесс тестирования в проекте реализован на нескольких уровнях с использованием современных инструментов и подходов:
+
+#### Используемые инструменты и технологии
+
+| Инструмент | Назначение |
+|------------|------------|
+| **JUnit 5** | Фреймворк для написания и запуска тестов |
+| **Mockito** | Создание моков и заглушек для изоляции тестируемых компонентов |
+| **AssertJ** | Fluent API для написания читаемых assertions |
+| **Spring Boot Test** | Интеграционное тестирование Spring-приложений |
+| **MockMvc** | Тестирование REST API без запуска сервера |
+| **Testcontainers** | Запуск реальных БД (PostgreSQL) в Docker для интеграционных тестов |
+| **H2 Database** | In-memory БД для быстрых тестов репозиториев |
+| **JaCoCo** | Измерение покрытия кода тестами |
+
+#### Уровни тестирования
+
+1. **Unit-тесты (модульные тесты)**
+   - Тестирование отдельных классов в изоляции
+   - Зависимости заменяются моками через `@Mock` и `@InjectMocks`
+   - Проверка бизнес-логики сервисов, утилит, валидации
+
+2. **Интеграционные тесты контроллеров**
+   - Использование `@WebMvcTest` для тестирования веб-слоя
+   - Проверка маршрутизации, валидации, сериализации JSON
+   - Сервисы мокируются через `@MockBean`
+
+3. **Полные интеграционные тесты**
+   - Использование `@SpringBootTest` с Testcontainers
+   - Тестирование полного цикла: Controller → Service → Repository → DB
+   - Проверка взаимодействия компонентов в реальном окружении
+
+#### Запуск тестов
+
+```bash
+# Запуск всех тестов с отчётом о покрытии
+./gradlew test jacocoTestReport
+
+# Запуск тестов для конкретного сервиса
+./gradlew :SSOService:test
+./gradlew :warehouse-service:test
+
+# Просмотр отчёта о покрытии
+# build/reports/jacoco/test/html/index.html
+```
+
+---
+
 ### Unit-тесты
 
-Представить код тестов для пяти методов и его пояснение
+Unit-тесты проверяют отдельные компоненты системы в изоляции от их зависимостей. Используется паттерн **AAA (Arrange-Act-Assert)** и моки для имитации поведения зависимостей.
+
+#### Пример 1: Тест регистрации пользователя (UserServiceTest)
+
+```java
+@ExtendWith(MockitoExtension.class)
+@DisplayName("UserService Unit Tests")
+class UserServiceTest {
+
+    @Mock
+    private UserReadModelRepository readModelRepository;
+    @Mock
+    private PasswordEncoder passwordEncoder;
+    @Mock
+    private JwtTokenService jwtTokenService;
+    @Mock
+    private RefreshTokenService refreshTokenService;
+
+    @InjectMocks
+    private UserService userService;
+
+    @Test
+    @DisplayName("register: Given valid DIRECTOR request When registering Then should create user and return auth response")
+    void register_GivenValidDirectorRequest_WhenRegistering_ThenShouldCreateUserAndReturnAuthResponse() {
+        // Arrange
+        RegisterRequest request = new RegisterRequest(
+                "test@example.com", "John", "Doe", null,
+                "password123", UserRole.DIRECTOR, null
+        );
+        
+        when(readModelRepository.existsByEmail(anyString())).thenReturn(false);
+        when(passwordEncoder.encode(anyString())).thenReturn("encodedPassword123");
+        when(jwtTokenService.generateAccessToken(any(), anyString(), any())).thenReturn("accessToken");
+        when(jwtTokenService.generateRefreshToken()).thenReturn("refreshToken");
+
+        // Act
+        AuthResponse response = userService.register(request, "127.0.0.1", "Mozilla");
+
+        // Assert
+        assertThat(response).isNotNull();
+        assertThat(response.accessToken()).isEqualTo("accessToken");
+        assertThat(response.refreshToken()).isEqualTo("refreshToken");
+        
+        verify(readModelRepository).existsByEmail("test@example.com");
+        verify(passwordEncoder).encode("password123");
+    }
+}
+```
+
+**Пояснение:** Тест проверяет успешную регистрацию директора. Все зависимости (репозиторий, encoder, JWT-сервис) замокированы. Проверяется, что метод возвращает корректный `AuthResponse` и вызывает необходимые методы зависимостей.
+
+---
+
+#### Пример 2: Тест обработки дублирующегося email
+
+```java
+@Test
+@DisplayName("register: Given duplicate email When registering Then should throw conflict exception")
+void register_GivenDuplicateEmail_WhenRegistering_ThenShouldThrowConflictException() {
+    // Arrange
+    RegisterRequest request = new RegisterRequest(
+            "existing@example.com", "John", "Doe", null,
+            "password123", UserRole.DIRECTOR, null
+    );
+    when(readModelRepository.existsByEmail("existing@example.com")).thenReturn(true);
+
+    // Act & Assert
+    assertThatThrownBy(() -> userService.register(request, "127.0.0.1", "Mozilla"))
+            .isInstanceOf(AppException.class)
+            .hasMessageContaining("email уже существует");
+
+    verify(readModelRepository).existsByEmail("existing@example.com");
+    verify(passwordEncoder, never()).encode(anyString());  // Пароль не должен кодироваться
+    verify(readModelRepository, never()).save(any());       // Сохранение не должно происходить
+}
+```
+
+**Пояснение:** Тест проверяет, что при попытке регистрации с существующим email выбрасывается исключение `AppException`. Также проверяется, что последующие операции (кодирование пароля, сохранение) не выполняются.
+
+---
+
+#### Пример 3: Тест создания склада (WarehouseServiceTest)
+
+```java
+@ExtendWith(MockitoExtension.class)
+@DisplayName("WarehouseService Unit Tests")
+class WarehouseServiceTest {
+
+    @Mock
+    private WarehouseReadModelRepository readModelRepository;
+    @Mock
+    private WarehouseEventRepository eventRepository;
+    @Mock
+    private RabbitTemplate rabbitTemplate;
+
+    @InjectMocks
+    private WarehouseService warehouseService;
+
+    @Test
+    @DisplayName("createWarehouse: Given valid request Should create and return warehouse")
+    void createWarehouse_GivenValidRequest_ShouldCreateAndReturnWarehouse() {
+        // Arrange
+        UUID orgId = UUID.randomUUID();
+        UUID responsibleUserId = UUID.randomUUID();
+        CreateWarehouseRequest request = new CreateWarehouseRequest(
+                orgId, "Центральный склад", "г. Минск, ул. Ленина, 1", responsibleUserId
+        );
+
+        when(readModelRepository.existsByOrgIdAndName(orgId, "Центральный склад")).thenReturn(false);
+        when(readModelRepository.save(any(WarehouseReadModel.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        // Act
+        WarehouseResponse response = warehouseService.createWarehouse(request);
+
+        // Assert
+        assertThat(response).isNotNull();
+        assertThat(response.name()).isEqualTo("Центральный склад");
+        assertThat(response.orgId()).isEqualTo(orgId);
+        assertThat(response.isActive()).isTrue();
+
+        verify(eventRepository).save(any(WarehouseEvent.class));  // Событие должно быть сохранено
+        verify(readModelRepository).save(any(WarehouseReadModel.class));
+    }
+}
+```
+
+**Пояснение:** Тест проверяет создание нового склада. Используется паттерн Event Sourcing — проверяется сохранение события и read-модели. Мок `RabbitTemplate` позволяет изолировать тест от очереди сообщений.
+
+---
+
+#### Пример 4: Тест контроллера аутентификации (AuthControllerTest)
+
+```java
+@ExtendWith(MockitoExtension.class)
+class AuthControllerTest {
+
+    @Mock
+    private UserService userService;
+    @Mock
+    private JwtTokenService jwtTokenService;
+    @Mock
+    private HttpServletRequest httpServletRequest;
+
+    @InjectMocks
+    private AuthController authController;
+
+    @Test
+    void register_ShouldReturnCreatedResponse() {
+        // Arrange
+        RegisterRequest request = new RegisterRequest(
+                "test@example.com", "First", "Last", null, 
+                "password", UserRole.DIRECTOR, null
+        );
+        AuthResponse authResponse = AuthResponse.of("access", "refresh", 3600L);
+        
+        when(userService.register(eq(request), anyString(), anyString())).thenReturn(authResponse);
+        when(httpServletRequest.getHeader("X-Forwarded-For")).thenReturn("127.0.0.1");
+        when(httpServletRequest.getHeader("User-Agent")).thenReturn("Mozilla");
+
+        // Act
+        ResponseEntity<AuthResponse> response = authController.register(request, httpServletRequest);
+
+        // Assert
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(response.getBody()).isEqualTo(authResponse);
+    }
+
+    @Test
+    void logout_ShouldInvalidateToken() {
+        // Arrange
+        RefreshTokenRequest request = new RefreshTokenRequest("refresh-token");
+
+        // Act
+        ResponseEntity<Map<String, String>> response = authController.logout(request);
+
+        // Assert
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).containsEntry("message", "Успешный выход");
+        verify(userService).logout("refresh-token");
+    }
+}
+```
+
+**Пояснение:** Unit-тесты контроллера проверяют корректность HTTP-статусов ответов и делегирование логики сервисам. Тестируется изолированно без поднятия Spring-контекста.
+
+---
 
 ### Интеграционные тесты
 
-Представить код тестов и его пояснение
+Интеграционные тесты проверяют взаимодействие нескольких компонентов системы. Используется `@WebMvcTest` для тестирования веб-слоя с MockMvc.
+
+#### Пример: Интеграционный тест AuthController
+
+```java
+@WebMvcTest(controllers = AuthController.class)
+@AutoConfigureMockMvc(addFilters = false)
+@DisplayName("AuthController Integration Tests")
+class AuthControllerIntegrationTest {
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @Autowired
+    private ObjectMapper objectMapper;
+
+    @MockBean
+    private UserService userService;
+
+    @MockBean
+    private JwtTokenService jwtTokenService;
+
+    @Test
+    @DisplayName("Успешная регистрация DIRECTOR - возвращает 201 и токены")
+    void register_WithValidDirectorRequest_ShouldReturnCreatedWithTokens() throws Exception {
+        // Arrange
+        RegisterRequest request = new RegisterRequest(
+                "director@test.com", "Иван", "Иванов", "Иванович",
+                "password123", UserRole.DIRECTOR, null
+        );
+
+        AuthResponse expectedResponse = AuthResponse.of(
+                "access-token-123", "refresh-token-456", 900L
+        );
+
+        when(userService.register(any(RegisterRequest.class), nullable(String.class), nullable(String.class)))
+                .thenReturn(expectedResponse);
+
+        // Act & Assert
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andDo(print())
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.accessToken").value("access-token-123"))
+                .andExpect(jsonPath("$.refreshToken").value("refresh-token-456"))
+                .andExpect(jsonPath("$.tokenType").value("Bearer"))
+                .andExpect(jsonPath("$.expiresIn").value(900));
+
+        verify(userService).register(any(RegisterRequest.class), nullable(String.class), nullable(String.class));
+    }
+
+    @Test
+    @DisplayName("Ошибка валидации - некорректный email, возвращает 400")
+    void register_WithInvalidEmail_ShouldReturnBadRequest() throws Exception {
+        // Arrange
+        RegisterRequest request = new RegisterRequest(
+                "invalid-email",  // Некорректный формат email
+                "Test", "User", null, "password123", UserRole.DIRECTOR, null
+        );
+
+        // Act & Assert
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest());
+
+        // Сервис не должен вызываться при ошибке валидации
+        verify(userService, never()).register(any(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("Успешный вход - возвращает токены")
+    void login_WithValidCredentials_ShouldReturnTokens() throws Exception {
+        // Arrange
+        LoginRequest loginRequest = new LoginRequest("login@test.com", "password123");
+        AuthResponse expectedResponse = AuthResponse.of(
+                "login-access-token", "login-refresh-token", 900L
+        );
+
+        when(userService.login(any(LoginRequest.class), nullable(String.class), nullable(String.class)))
+                .thenReturn(expectedResponse);
+
+        // Act & Assert
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(loginRequest)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accessToken").value("login-access-token"))
+                .andExpect(jsonPath("$.refreshToken").value("login-refresh-token"))
+                .andExpect(jsonPath("$.tokenType").value("Bearer"));
+    }
+
+    @Test
+    @DisplayName("Валидный токен - возвращает информацию о пользователе")
+    void getCurrentUser_WithValidToken_ShouldReturnUserInfo() throws Exception {
+        // Arrange
+        UUID userId = UUID.randomUUID();
+        UserResponse expectedResponse = new UserResponse(
+                userId, "me@test.com", "Иванов Иван Иванович",
+                UserRole.DIRECTOR, null, null, null
+        );
+
+        when(jwtTokenService.getUserIdFromToken(anyString())).thenReturn(userId);
+        when(userService.getUserInfo(userId)).thenReturn(expectedResponse);
+
+        // Act & Assert
+        mockMvc.perform(get("/api/auth/me")
+                        .header("Authorization", "Bearer valid-jwt-token"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.email").value("me@test.com"))
+                .andExpect(jsonPath("$.role").value("DIRECTOR"))
+                .andExpect(jsonPath("$.fullName").value("Иванов Иван Иванович"));
+    }
+}
+```
+
+**Пояснение к интеграционным тестам:**
+
+1. **@WebMvcTest** — поднимает только MVC-контекст (контроллеры, фильтры, валидация), что делает тесты быстрыми
+2. **MockMvc** — позволяет выполнять HTTP-запросы без реального сервера
+3. **@MockBean** — заменяет реальные сервисы моками в Spring-контексте
+4. **jsonPath()** — проверяет структуру JSON-ответа
+5. **Тестируется:**
+   - Маршрутизация HTTP-запросов
+   - Валидация входных данных (@Valid)
+   - Сериализация/десериализация JSON
+   - HTTP статус-коды ответов
+
+#### Структура тестов в проекте
+
+```
+src/test/java/
+├── controller/           # Unit-тесты контроллеров
+│   ├── AuthControllerTest.java
+│   ├── ProfileControllerTest.java
+│   └── OAuthControllerTest.java
+├── service/              # Unit-тесты сервисов
+│   ├── UserServiceTest.java
+│   ├── JwtTokenServiceTest.java
+│   └── RefreshTokenServiceTest.java
+├── integration/          # Интеграционные тесты
+│   ├── AuthControllerIntegrationTest.java
+│   └── BaseIntegrationTest.java
+└── utils/                # Тесты утилит
+    ├── JwkUtilsTest.java
+    └── SecurityUtilsTest.java
+```
 
 ---
 
