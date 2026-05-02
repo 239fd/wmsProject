@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AmplicodePersistenceUnitSettings">
+    <persistence-units>
+      <persistence-unit moduleName="warehouseMicroservices.organization-service.main" name="Default">
+        <packages>
+          <package value="by.bsuir.organizationservice" />
+        </packages>
+      </persistence-unit>
+      <persistence-unit moduleName="warehouseMicroservices.product-service.main" name="Default">
+        <packages>
+          <package value="by.bsuir.productservice" />
+        </packages>
+      </persistence-unit>
+      <persistence-unit moduleName="warehouseMicroservices.SSOService.main" name="Default">
+        <packages>
+          <package value="by.bsuir.ssoservice" />
+        </packages>
+      </persistence-unit>
+      <persistence-unit moduleName="warehouseMicroservices.warehouse-service.main" name="Default">
+        <packages>
+          <package value="by.bsuir.warehouseservice" />
+        </packages>
+      </persistence-unit>
+    </persistence-units>
+  </component>
+</project>
