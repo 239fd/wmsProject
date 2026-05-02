@@ -1,0 +1,147 @@
+version: "3.8"
+
+# Только инфраструктура для локальной разработки backend.
+# Сами Spring-сервисы запускаешь у себя (./gradlew :SSOService:bootRun и т.д.) —
+# они подключатся к этим контейнерам через localhost.
+#
+# Использование:
+#   docker-compose -f docker-compose.backend.yml up -d
+#   docker-compose -f docker-compose.backend.yml down       # без -v чтобы сохранить данные
+#   docker-compose -f docker-compose.backend.yml down -v    # с очисткой
+#
+# Тома (pg_data_*, redis_data, rabbitmq_data) совпадают с docker-compose.yml,
+# поэтому данные общие между этим файлом и полным стеком.
+
+services:
+  postgres-sso:
+    image: postgres:16-alpine
+    container_name: postgres-sso
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: user_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data_sso:/var/lib/postgresql/data
+      - ./sql-scripts/userDB.sql:/docker-entrypoint-initdb.d/01-userDB.sql:ro
+    networks:
+      - wms-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d user_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-org:
+    image: postgres:16-alpine
+    container_name: postgres-org
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: organization_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - pg_data_org:/var/lib/postgresql/data
+      - ./sql-scripts/organizationDB.sql:/docker-entrypoint-initdb.d/01-organizationDB.sql:ro
+    networks:
+      - wms-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d organization_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-warehouse:
+    image: postgres:16-alpine
+    container_name: postgres-warehouse
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: warehouse_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5434:5432"
+    volumes:
+      - pg_data_warehouse:/var/lib/postgresql/data
+      - ./sql-scripts/warehouseDB.sql:/docker-entrypoint-initdb.d/01-warehouseDB.sql:ro
+    networks:
+      - wms-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d warehouse_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-product:
+    image: postgres:16-alpine
+    container_name: postgres-product
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: product_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5435:5432"
+    volumes:
+      - pg_data_product:/var/lib/postgresql/data
+      - ./sql-scripts/productDB.sql:/docker-entrypoint-initdb.d/01-productDB.sql:ro
+    networks:
+      - wms-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d product_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - wms-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    container_name: rabbitmq
+    restart: unless-stopped
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - wms-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  wms-network:
+    driver: bridge
+
+volumes:
+  pg_data_sso:
+  pg_data_org:
+  pg_data_warehouse:
+  pg_data_product:
+  redis_data:
+  rabbitmq_data:
