@@ -1,3 +1,6 @@
+Данный микросервис представляет собой сервис - работу со складом, а именно с его топологией.
+По сути основная функция аналогична OrganizationService, то есть реализация CRUD операций к сущности, только имеется более сложная структура в бд. В случае удаления склада, удаляются все сотрудники привязанные к нему.
+Скрипт базы данных:
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 CREATE TYPE rack_kind AS ENUM ('SHELF', 'CELL', 'FRIDGE', 'PALLET');
@@ -31,18 +34,16 @@ CREATE INDEX idx_warehouse_events_warehouse_id ON warehouse_events (warehouse_id
 
 CREATE TABLE rack_read_model
 (
-    rack_id            UUID PRIMARY KEY      DEFAULT uuid_generate_v4(),
-    warehouse_id       UUID         NOT NULL REFERENCES warehouse_read_model (warehouse_id) ON DELETE CASCADE,
-    kind               rack_kind    NOT NULL,
-    name               VARCHAR(255) NOT NULL,
-    storage_conditions VARCHAR(20),
-    is_active          BOOLEAN      NOT NULL DEFAULT TRUE,
-    created_at         TIMESTAMP    NOT NULL DEFAULT now(),
-    updated_at         TIMESTAMP    NOT NULL DEFAULT now()
+    rack_id      UUID PRIMARY KEY      DEFAULT uuid_generate_v4(),
+    warehouse_id UUID         NOT NULL REFERENCES warehouse_read_model (warehouse_id) ON DELETE CASCADE,
+    kind         rack_kind    NOT NULL,
+    name         VARCHAR(255) NOT NULL,
+    is_active    BOOLEAN      NOT NULL DEFAULT TRUE,
+    created_at   TIMESTAMP    NOT NULL DEFAULT now(),
+    updated_at   TIMESTAMP    NOT NULL DEFAULT now()
 );
 
 CREATE INDEX idx_rack_read_model_warehouse_id ON rack_read_model (warehouse_id);
-CREATE INDEX idx_rack_read_model_storage_conditions ON rack_read_model (storage_conditions);
 
 CREATE TABLE rack_events
 (
@@ -60,7 +61,6 @@ CREATE TABLE shelf
 (
     shelf_id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     rack_id           UUID          NOT NULL REFERENCES rack_read_model (rack_id) ON DELETE CASCADE,
-    organization_id   UUID,
     shelf_capacity_kg NUMERIC(8, 2) NOT NULL,
     length_cm         NUMERIC(8, 2) NOT NULL,
     width_cm          NUMERIC(8, 2) NOT NULL,
@@ -68,35 +68,28 @@ CREATE TABLE shelf
     CONSTRAINT chk_shelf_capacity CHECK (shelf_capacity_kg > 0),
     CONSTRAINT chk_shelf_dims CHECK (length_cm > 0 AND width_cm > 0 AND height_cm > 0)
 );
-CREATE INDEX idx_shelf_organization_id ON shelf(organization_id);
 
 CREATE TABLE cell
 (
-    cell_id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    rack_id         UUID          NOT NULL REFERENCES rack_read_model (rack_id) ON DELETE CASCADE,
-    organization_id UUID,
-    max_weight_kg   NUMERIC(8, 2),
-    length_cm       NUMERIC(8, 2) NOT NULL,
-    width_cm        NUMERIC(8, 2) NOT NULL,
-    height_cm       NUMERIC(8, 2) NOT NULL,
+    cell_id       UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    rack_id       UUID          NOT NULL REFERENCES rack_read_model (rack_id) ON DELETE CASCADE,
+    max_weight_kg NUMERIC(8, 2),
+    length_cm     NUMERIC(8, 2) NOT NULL,
+    width_cm      NUMERIC(8, 2) NOT NULL,
+    height_cm     NUMERIC(8, 2) NOT NULL,
     CONSTRAINT chk_cell_weight CHECK (max_weight_kg IS NULL OR max_weight_kg > 0),
     CONSTRAINT chk_cell_dims CHECK (length_cm > 0 AND width_cm > 0 AND height_cm > 0)
 );
-CREATE INDEX idx_cell_organization_id ON cell(organization_id);
 
 CREATE TABLE fridge
 (
-    rack_id           UUID PRIMARY KEY REFERENCES rack_read_model (rack_id) ON DELETE CASCADE,
-    organization_id   UUID,
-    min_temperature_c NUMERIC(5, 2),
-    max_temperature_c NUMERIC(5, 2),
-    length_cm         NUMERIC(8, 2) NOT NULL,
-    width_cm          NUMERIC(8, 2) NOT NULL,
-    height_cm         NUMERIC(8, 2) NOT NULL,
-    CONSTRAINT chk_fridge_dims CHECK (length_cm > 0 AND width_cm > 0 AND height_cm > 0),
-    CONSTRAINT chk_fridge_temp_range CHECK (min_temperature_c IS NULL OR max_temperature_c IS NULL OR min_temperature_c <= max_temperature_c)
+    rack_id       UUID PRIMARY KEY REFERENCES rack_read_model (rack_id) ON DELETE CASCADE,
+    temperature_c NUMERIC(5, 2),
+    length_cm     NUMERIC(8, 2) NOT NULL,
+    width_cm      NUMERIC(8, 2) NOT NULL,
+    height_cm     NUMERIC(8, 2) NOT NULL,
+    CONSTRAINT chk_fridge_dims CHECK (length_cm > 0 AND width_cm > 0 AND height_cm > 0)
 );
-CREATE INDEX idx_fridge_organization_id ON fridge(organization_id);
 
 CREATE TABLE pallet
 (
@@ -109,11 +102,9 @@ CREATE TABLE pallet
 
 CREATE TABLE pallet_place
 (
-    place_id        UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    rack_id         UUID          NOT NULL REFERENCES pallet (rack_id) ON DELETE CASCADE,
-    organization_id UUID,
-    length_cm       NUMERIC(8, 2) NOT NULL,
-    width_cm        NUMERIC(8, 2) NOT NULL,
-    height_cm       NUMERIC(8, 2) NOT NULL
+    place_id  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    rack_id   UUID          NOT NULL REFERENCES pallet (rack_id) ON DELETE CASCADE,
+    length_cm NUMERIC(8, 2) NOT NULL,
+    width_cm  NUMERIC(8, 2) NOT NULL,
+    height_cm NUMERIC(8, 2) NOT NULL
 );
-CREATE INDEX idx_pallet_place_organization_id ON pallet_place(organization_id);

@@ -1,17 +1,5 @@
 version: "3.8"
 
-# Только инфраструктура для локальной разработки backend.
-# Сами Spring-сервисы запускаешь у себя (./gradlew :SSOService:bootRun и т.д.) —
-# они подключатся к этим контейнерам через localhost.
-#
-# Использование:
-#   docker-compose -f docker-compose.backend.yml up -d
-#   docker-compose -f docker-compose.backend.yml down       # без -v чтобы сохранить данные
-#   docker-compose -f docker-compose.backend.yml down -v    # с очисткой
-#
-# Тома (pg_data_*, redis_data, rabbitmq_data) совпадают с docker-compose.yml,
-# поэтому данные общие между этим файлом и полным стеком.
-
 services:
   postgres-sso:
     image: postgres:16-alpine
