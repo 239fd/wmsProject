@@ -1,0 +1,1894 @@
+{
+  "info": {
+    "_postman_id": "9c3e2a1d-5f4b-4a8e-9d2c-7b1f0e3c8a4b",
+    "name": "WMS API — E2E Scenarios",
+    "description": "End-to-end сценарии для пяти микросервисов WMS, идущие через api-gateway (`{{gatewayUrl}}`).\n\n## Папки\n- **0. SSO** — регистрация/логин/refresh.\n- **1. Organization** — создание организации, инвайты.\n- **2. Warehouse** — склад, стеллажи, ячейки.\n- **3. Product, Batch & Receive** — товар → партия → приёмка → инвентарь → переоценка.\n- **4. Documents** — приходный ордер (PDF) + метаданные + скачивание.\n- **5. Suppliers & Supplies** — поставщики и плановые поставки.\n- **6. Ship Request** — заявка на отгрузку → pick → complete (ship-сага).\n- **7. Inventory Check** — старт сессии → запись подсчётов → завершение.\n- **8. ERP Extractor** — RPA/API-извлечение поставок из внешней ERP.\n- **9. Edge Cases** — негативные проверки (401/409/невалидный refresh).\n- **10. Worker Onboarding & Role Negatives** — приглашение → регистрация WORKER → 403 на DIRECTOR-only ручках → блокировка/разблокировка.\n- **11. RabbitMQ Cross-Service Cascade** — DELETE организации триггерит цепочку событий (`organization.archived`, `warehouse.deleted`); проверяем последствия.\n\n## Как запускать\n1. Поднять инфру и сервисы (`docker compose -f docker-compose.backend.yml up -d` + Eureka + бизнес-сервисы).\n2. Импортировать этот файл в Postman.\n3. Запустить папки **по порядку** (0 → 11) или прогнать всю коллекцию через Collection Runner — переменные (`accessToken`, `orgId`, `warehouseId`, …) автоматически захватываются test-скриптами.\n\nПеременные сценария (email, SKU, УНП) генерируются один раз в pre-request **0.1 Register Director**, чтобы повторный run не падал на дубликатах.\n\n## Auto-headers (collection-level pre-request)\n\nКонтроллеры в org-/warehouse-/product-service требуют `X-User-Id` / `X-User-Role` / `X-Organization-Id` явно (gateway не всегда прокидывает их из JWT). На уровне коллекции есть pre-request, который автоматически добавляет эти заголовки на все авторизованные запросы:\n\n- `X-User-Id` ← `{{directorId}}` (или `{{workerId}}`, если запрос через worker-Bearer)\n- `X-User-Role` ← `DIRECTOR` (или `WORKER`)\n- `X-Organization-Id` ← `{{orgId}}`\n\nЕсли запрос уже задаёт заголовок явно — скрипт его не перетирает. Публичные ручки (`auth: noauth`) пропускаются.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      { "key": "token", "value": "{{accessToken}}", "type": "string" }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Collection-level pre-request: автоинжект X-User-Id / X-User-Role / X-Organization-Id.",
+          "// Backend (org/warehouse/product/document services) требует эти заголовки явно — gateway",
+          "// не всегда их прокидывает из JWT. Скрипт ставит заголовки, только если они ещё не заданы",
+          "// и в коллекции есть accessToken (т.е. мы прошли логин).",
+          "(function () {",
+          "    const accessToken = pm.collectionVariables.get('accessToken');",
+          "    if (!accessToken) return;",
+          "",
+          "    // Не трогаем публичные ручки (register/login/refresh/validate-invitation) — там auth: noauth.",
+          "    const auth = pm.request.auth;",
+          "    if (auth && auth.type === 'noauth') return;",
+          "",
+          "    // Определяем identity: worker или director. Worker-запросы переопределяют auth на",
+          "    // request-level Bearer с {{workerAccessToken}} — детектим по сырому шаблону.",
+          "    const authStr = auth ? JSON.stringify(auth) : '';",
+          "    const isWorker = authStr.indexOf('workerAccessToken') >= 0;",
+          "",
+          "    const userId = isWorker",
+          "        ? pm.collectionVariables.get('workerId')",
+          "        : pm.collectionVariables.get('directorId');",
+          "    const role = isWorker ? 'WORKER' : 'DIRECTOR';",
+          "    const orgId = pm.collectionVariables.get('orgId');",
+          "",
+          "    const setIfMissing = (key, value) => {",
+          "        if (value && !pm.request.headers.has(key)) {",
+          "            pm.request.headers.add({ key: key, value: value });",
+          "        }",
+          "    };",
+          "",
+          "    setIfMissing('X-User-Id', userId);",
+          "    setIfMissing('X-User-Role', role);",
+          "    setIfMissing('X-Organization-Id', orgId);",
+          "})();"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    { "key": "gatewayUrl", "value": "http://localhost:8765", "type": "string" },
+    { "key": "directorEmail", "value": "", "type": "string" },
+    { "key": "directorPassword", "value": "Director1!", "type": "string" },
+    { "key": "directorId", "value": "", "type": "string" },
+    { "key": "accessToken", "value": "", "type": "string" },
+    { "key": "refreshToken", "value": "", "type": "string" },
+    { "key": "orgId", "value": "", "type": "string" },
+    { "key": "orgUnp", "value": "", "type": "string" },
+    { "key": "warehouseId", "value": "", "type": "string" },
+    { "key": "rackId", "value": "", "type": "string" },
+    { "key": "cellId", "value": "", "type": "string" },
+    { "key": "productId", "value": "", "type": "string" },
+    { "key": "productSku", "value": "", "type": "string" },
+    { "key": "batchId", "value": "", "type": "string" },
+    { "key": "operationId", "value": "", "type": "string" },
+    { "key": "documentId", "value": "", "type": "string" },
+    { "key": "invitationToken", "value": "", "type": "string" },
+    { "key": "supplierId", "value": "", "type": "string" },
+    { "key": "supplyId", "value": "", "type": "string" },
+    { "key": "shipRequestId", "value": "", "type": "string" },
+    { "key": "inventorySessionId", "value": "", "type": "string" },
+    { "key": "workerEmail", "value": "", "type": "string" },
+    { "key": "workerPassword", "value": "Worker1!", "type": "string" },
+    { "key": "workerAccessToken", "value": "", "type": "string" },
+    { "key": "workerRefreshToken", "value": "", "type": "string" },
+    { "key": "workerId", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "0. SSO — Register & Auth",
+      "description": "Регистрация директора → логин → /me. Захватывает `accessToken`, `refreshToken`, `directorId`.",
+      "item": [
+        {
+          "name": "0.1 Register Director",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{directorEmail}}\",\n  \"password\": \"{{directorPassword}}\",\n  \"firstName\": \"Иван\",\n  \"lastName\": \"Директоров\",\n  \"middleName\": \"Петрович\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/auth/register/director",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "auth", "register", "director"]
+            },
+            "description": "Создаёт DIRECTOR без организации. Pre-request инициализирует уникальные `directorEmail`, `productSku`, `orgUnp` для прогона."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Генерируем уникальные значения один раз на прогон коллекции",
+                  "if (!pm.collectionVariables.get('directorEmail')) {",
+                  "    const ts = Date.now();",
+                  "    pm.collectionVariables.set('directorEmail', `director.${ts}@wms.local`);",
+                  "    pm.collectionVariables.set('productSku', `SKU-${ts}`);",
+                  "    pm.collectionVariables.set('orgUnp', String(ts).slice(-9));",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200 или 201', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "0.2 Login",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{directorEmail}}\",\n  \"password\": \"{{directorPassword}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/auth/login",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "auth", "login"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('accessToken есть', () => pm.expect(body.accessToken).to.be.a('string').and.not.empty);",
+                  "pm.collectionVariables.set('accessToken', body.accessToken);",
+                  "pm.collectionVariables.set('refreshToken', body.refreshToken);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "0.3 Get Me",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/auth/me",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "auth", "me"]
+            },
+            "description": "Возвращает `UserResponse { userId, email, fullName, role, organizationId, warehouseId }`. Захватываем `directorId`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Роль DIRECTOR', () => pm.expect(body.role).to.eql('DIRECTOR'));",
+                  "pm.collectionVariables.set('directorId', body.userId);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "0.4 Refresh Token",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/auth/refresh",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "auth", "refresh"]
+            },
+            "description": "Опционально. Ротирует пару (access, refresh)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('accessToken', body.accessToken);",
+                  "pm.collectionVariables.set('refreshToken', body.refreshToken);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "1. Organization",
+      "description": "Создание организации директором, инвайт сотрудника. Захватывает `orgId`, `invitationToken`.",
+      "item": [
+        {
+          "name": "1.1 Create Organization",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"ООО Тест Ромашка {{orgUnp}}\",\n  \"shortName\": \"Ромашка\",\n  \"unp\": \"{{orgUnp}}\",\n  \"address\": \"г. Минск, ул. Тестовая, 1\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/organizations",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "organizations"]
+            },
+            "description": "Возвращает `OrganizationResponse { orgId, ... }`. После создания org-service шлёт PATCH в SSO, который обновляет `organizationId` в JWT-claims на следующем логине."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200/201', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('orgId', body.orgId);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "1.2 Re-Login (refresh JWT claims with orgId)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{directorEmail}}\",\n  \"password\": \"{{directorPassword}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/auth/login",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "auth", "login"]
+            },
+            "description": "После создания организации директор должен перелогиниться, чтобы новый JWT содержал `organizationId` в claims (gateway пробросит его как `X-Organization-Id`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('accessToken', body.accessToken);",
+                  "pm.collectionVariables.set('refreshToken', body.refreshToken);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "1.3 Get Organization",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/organizations/{{orgId}}",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "organizations", "{{orgId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('orgId совпадает', () => pm.expect(pm.response.json().orgId).to.eql(pm.collectionVariables.get('orgId')));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "1.4 Create Invitation (для WORKER)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"worker.{{$timestamp}}@wms.local\",\n  \"role\": \"WORKER\",\n  \"warehouseId\": \"{{warehouseId}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/organizations/{{orgId}}/invitations",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "organizations", "{{orgId}}", "invitations"]
+            },
+            "description": "Создаёт invitation-токен. Если `warehouseId` ещё не создан — сначала пройди папку `2. Warehouse`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200/201', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('invitationToken', body.invitationToken);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "1.5 Validate Invitation (public)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/invitations/validate?token={{invitationToken}}",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "invitations", "validate"],
+              "query": [{ "key": "token", "value": "{{invitationToken}}" }]
+            },
+            "description": "Публичный эндпоинт — проверка токена для формы регистрации сотрудника."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "2. Warehouse",
+      "description": "Создание склада, стеллажа (kind=CELL) и ячейки. Захватывает `warehouseId`, `rackId`, `cellId`.",
+      "item": [
+        {
+          "name": "2.1 Create Warehouse",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orgId\": \"{{orgId}}\",\n  \"name\": \"Главный склад {{orgUnp}}\",\n  \"address\": \"г. Минск, ул. Складская, 10\",\n  \"responsibleUserId\": \"{{directorId}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/warehouses",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "warehouses"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200/201', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('warehouseId', body.warehouseId);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "2.2 Create Rack (kind=CELL)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"warehouseId\": \"{{warehouseId}}\",\n  \"kind\": \"CELL\",\n  \"name\": \"Стеллаж А1\",\n  \"storageConditions\": \"DRY\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/racks",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "racks"]
+            },
+            "description": "Создаёт стеллаж типа CELL. Доступные kind: SHELF | CELL | FRIDGE | PALLET."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200/201', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('rackId', body.rackId);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "2.3 Create Cell",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rackId\": \"{{rackId}}\",\n  \"maxWeightKg\": 100.0,\n  \"lengthCm\": 60.0,\n  \"widthCm\": 40.0,\n  \"heightCm\": 50.0\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/racks/{{rackId}}/cells",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "racks", "{{rackId}}", "cells"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200/201', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "const body = pm.response.json();",
+                  "// Контроллер может вернуть { cellId } напрямую или объект ячейки",
+                  "const cellId = body.cellId || body.id;",
+                  "if (cellId) pm.collectionVariables.set('cellId', cellId);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "2.4 List Cells of Rack",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/racks/{{rackId}}/cells",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "racks", "{{rackId}}", "cells"]
+            },
+            "description": "Fallback захвата `cellId`, если 2.3 не вернула id напрямую."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const list = pm.response.json();",
+                  "if (Array.isArray(list) && list.length > 0) {",
+                  "    const id = list[0].cellId || list[0].id;",
+                  "    if (id) pm.collectionVariables.set('cellId', id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "2.5 Get Warehouse Info",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/warehouses/{{warehouseId}}/info",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "warehouses", "{{warehouseId}}", "info"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "3. Product, Batch & Receive",
+      "description": "Создание товара, партии, приёмка → инвентарь. Захватывает `productId`, `batchId`, `operationId`.",
+      "item": [
+        {
+          "name": "3.1 Create Product",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Тестовый товар {{productSku}}\",\n  \"sku\": \"{{productSku}}\",\n  \"barcode\": \"460000{{orgUnp}}\",\n  \"category\": \"тест\",\n  \"description\": \"Создан e2e-сценарием Postman\",\n  \"unitOfMeasure\": \"шт\",\n  \"weightKg\": 0.500,\n  \"volumeM3\": 0.001\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/products",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "products"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200/201', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('productId', body.productId);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "3.2 Create Batch",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": \"{{productId}}\",\n  \"batchNumber\": \"BATCH-001\",\n  \"manufactureDate\": \"2026-01-15\",\n  \"expiryDate\": \"2027-01-15\",\n  \"supplier\": \"ООО Поставщик\",\n  \"purchasePrice\": 12.50,\n  \"storageConditions\": \"DRY\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/products/{{productId}}/batches",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "products", "{{productId}}", "batches"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200/201', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('batchId', body.batchId);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "3.3 Receive Product",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": \"{{productId}}\",\n  \"batchId\": \"{{batchId}}\",\n  \"warehouseId\": \"{{warehouseId}}\",\n  \"cellId\": \"{{cellId}}\",\n  \"quantity\": 50,\n  \"userId\": \"{{directorId}}\",\n  \"notes\": \"E2E приёмка\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/operations/receive",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "operations", "receive"]
+            },
+            "description": "Запускает receive-сагу: BATCH_CREATION → INVENTORY_UPDATE → OPERATION_RECORD. Возвращает `{ message, operationId }`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('operationId', body.operationId);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "3.4 Get Inventory by Warehouse",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/inventory/warehouse/{{warehouseId}}",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "inventory", "warehouse", "{{warehouseId}}"]
+            },
+            "description": "Должна вернуться запись по только что принятому товару с `quantity: 50`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const list = pm.response.json();",
+                  "pm.test('Инвентарь не пуст', () => pm.expect(Array.isArray(list) && list.length > 0).to.be.true);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "3.5 Revaluation",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": \"{{productId}}\",\n  \"warehouseId\": \"{{warehouseId}}\",\n  \"newPrice\": 15.99,\n  \"reason\": \"Сезонная переоценка\",\n  \"userId\": \"{{directorId}}\",\n  \"notes\": \"E2E переоценка\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/operations/revaluation",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "operations", "revaluation"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200/201', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "4. Documents",
+      "description": "Генерация приходного ордера → получение метаданных → скачивание PDF.",
+      "item": [
+        {
+          "name": "4.1 Generate Receipt Order (PDF)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Organization-Id", "value": "{{orgId}}" },
+              { "key": "X-User-Id", "value": "{{directorId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orderNumber\": \"PR-{{$timestamp}}\",\n  \"orderDate\": \"2026-05-06\",\n  \"organizationName\": \"ООО Тест Ромашка\",\n  \"warehouseName\": \"Главный склад\",\n  \"supplier\": \"ООО Поставщик\",\n  \"items\": [\n    {\n      \"name\": \"Тестовый товар\",\n      \"sku\": \"{{productSku}}\",\n      \"unit\": \"шт\",\n      \"quantity\": 50,\n      \"price\": 12.50,\n      \"sum\": 625.00\n    }\n  ],\n  \"total\": 625.00\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/documents/receipt-order?format=pdf",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "documents", "receipt-order"],
+              "query": [{ "key": "format", "value": "pdf" }]
+            },
+            "description": "Возвращает `{ documentId, type, status }`. Тело — `Map<String, Object>`, поля шаблонные (см. документацию document-service)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('documentId', body.documentId);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "4.2 Get Document Metadata",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Organization-Id", "value": "{{orgId}}" }],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/documents/{{documentId}}/metadata",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "documents", "{{documentId}}", "metadata"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "4.3 Download Document (PDF)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Organization-Id", "value": "{{orgId}}" }],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/documents/{{documentId}}",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "documents", "{{documentId}}"]
+            },
+            "description": "Возвращает application/pdf. В Postman → Save Response → Save to a file."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Content-Type PDF', () => pm.expect(pm.response.headers.get('Content-Type')).to.include('pdf'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "5. Suppliers & Supplies",
+      "description": "Справочник поставщиков (`/api/suppliers`) и плановые поставки (`/api/supplies`). Захватывает `supplierId`, `supplyId`. Зависит от папок 1 (orgId), 2 (warehouseId), 3 (productId).",
+      "item": [
+        {
+          "name": "5.1 Create Supplier",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"ООО Поставщик {{orgUnp}}\",\n  \"unp\": \"{{orgUnp}}\",\n  \"contactPerson\": \"Сергей Поставщиков\",\n  \"phone\": \"+375291234567\",\n  \"email\": \"supplier.{{orgUnp}}@wms.local\",\n  \"address\": \"г. Минск, ул. Поставщиков, 7\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/suppliers",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "suppliers"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200/201', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('supplierId', body.supplierId);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "5.2 List Suppliers",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/suppliers",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "suppliers"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Список не пуст', () => pm.expect(pm.response.json().length).to.be.greaterThan(0));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "5.3 Create Supply",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"supplierId\": \"{{supplierId}}\",\n  \"warehouseId\": \"{{warehouseId}}\",\n  \"expectedDate\": \"2026-05-15\",\n  \"notes\": \"E2E плановая поставка\",\n  \"createdBy\": \"{{directorId}}\",\n  \"items\": [\n    {\n      \"productId\": \"{{productId}}\",\n      \"expectedQty\": 100,\n      \"unitPrice\": 12.50,\n      \"notes\": \"Партия 1\"\n    }\n  ]\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/supplies",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "supplies"]
+            },
+            "description": "Создаёт плановую поставку в статусе PLANNED."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200/201', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('supplyId', body.supplyId);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "5.4 List Supplies (filter by warehouse)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/supplies?warehouseId={{warehouseId}}",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "supplies"],
+              "query": [{ "key": "warehouseId", "value": "{{warehouseId}}" }]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "5.5 Get Supply",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/supplies/{{supplyId}}",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "supplies", "{{supplyId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('supplyId совпадает', () => pm.expect(pm.response.json().supplyId).to.eql(pm.collectionVariables.get('supplyId')));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "6. Ship Request",
+      "description": "Заявка на отгрузку → pick → complete. Запускает ship-сагу: STOCK_RESERVATION → STAGING → DOCUMENT_GENERATION → INVENTORY_UPDATE → OPERATION_RECORD. Зависит от папки 3 (productId, batchId, цельное приёмочное движение).",
+      "item": [
+        {
+          "name": "6.1 Create Ship Request",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-User-Id", "value": "{{directorId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"warehouseId\": \"{{warehouseId}}\",\n  \"recipientName\": \"ООО Получатель\",\n  \"recipientAddress\": \"г. Минск, ул. Получателя, 5\",\n  \"recipientInn\": \"{{orgUnp}}\",\n  \"plannedDate\": \"2026-05-10\",\n  \"comment\": \"E2E отгрузка\",\n  \"strategy\": \"FEFO\",\n  \"items\": [\n    {\n      \"productId\": \"{{productId}}\",\n      \"batchId\": \"{{batchId}}\",\n      \"expectedQty\": 10\n    }\n  ]\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/operations/ship-requests",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "operations", "ship-requests"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200/201', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('shipRequestId', body.requestId);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "6.2 Get Ship Request",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/operations/ship-requests/{{shipRequestId}}",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "operations", "ship-requests", "{{shipRequestId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "6.3 Pick Item",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"unitSku\": \"{{productSku}}\",\n  \"qty\": 10\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/operations/ship-requests/{{shipRequestId}}/pick",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "operations", "ship-requests", "{{shipRequestId}}", "pick"]
+            },
+            "description": "`unitSku` — SKU/маркировка отдельной единицы хранения. Если в системе хранятся индивидуальные коды (палеты, серийники), используй именно их. Здесь подставлен productSku как fallback — на реальном складе значение будет другим."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200/201', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "6.4 Complete Ship Request",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"documentTypes\": [\"WAYBILL\", \"RELEASE_ORDER\"]\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/operations/ship-requests/{{shipRequestId}}/complete",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "operations", "ship-requests", "{{shipRequestId}}", "complete"]
+            },
+            "description": "Завершает заявку: списывает резерв с инвентаря, генерирует документы (WAYBILL = ТТН, RELEASE_ORDER = отпускной ордер) через document-service."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200/201', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "6.5 List Ship Requests",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/operations/ship-requests",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "operations", "ship-requests"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "7. Inventory Check",
+      "description": "Сессия инвентаризации: старт → запись подсчётов → завершение с отчётом расхождений. `X-User-Role` обычно проставляется gateway из JWT-claims; здесь явно дублируем для надёжности.",
+      "item": [
+        {
+          "name": "7.1 Start Inventory Session",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "X-User-Role", "value": "DIRECTOR" }],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/inventory-check/start?warehouseId={{warehouseId}}&userId={{directorId}}&notes=E2E inventory",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "inventory-check", "start"],
+              "query": [
+                { "key": "warehouseId", "value": "{{warehouseId}}" },
+                { "key": "userId", "value": "{{directorId}}" },
+                { "key": "notes", "value": "E2E inventory" }
+              ]
+            },
+            "description": "Простой старт без комиссии. Для структурированной (комиссия + ответственный) — POST /api/inventory-check/start-structured с телом StartInventoryRequest."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200/201', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('inventorySessionId', body.sessionId);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "7.2 Record Count",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "X-User-Role", "value": "DIRECTOR" }],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/inventory-check/{{inventorySessionId}}/record?productId={{productId}}&cellId={{cellId}}&actualQuantity=48&notes=Недостача 2 шт",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "inventory-check", "{{inventorySessionId}}", "record"],
+              "query": [
+                { "key": "productId", "value": "{{productId}}" },
+                { "key": "cellId", "value": "{{cellId}}" },
+                { "key": "actualQuantity", "value": "48" },
+                { "key": "notes", "value": "Недостача 2 шт" }
+              ]
+            },
+            "description": "Записываем фактический подсчёт. После приёмки в 3.3 было 50 шт; даём 48 → ожидаемое расхождение -2."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200/201', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "7.3 Get Session",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-User-Role", "value": "DIRECTOR" }],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/inventory-check/{{inventorySessionId}}",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "inventory-check", "{{inventorySessionId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "7.4 Complete Session",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "X-User-Role", "value": "DIRECTOR" }],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/inventory-check/{{inventorySessionId}}/complete?userId={{directorId}}",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "inventory-check", "{{inventorySessionId}}", "complete"],
+              "query": [{ "key": "userId", "value": "{{directorId}}" }]
+            },
+            "description": "Закрывает сессию, формирует отчёт расхождений (discrepancy report)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200/201', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "7.5 Start Structured Session (commission + responsible)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-User-Role", "value": "DIRECTOR" },
+              { "key": "X-Organization-Id", "value": "{{orgId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"warehouseId\": \"{{warehouseId}}\",\n  \"userId\": \"{{directorId}}\",\n  \"responsibleUserId\": \"{{directorId}}\",\n  \"reason\": \"Плановая инвентаризация Q2\",\n  \"commissionMembers\": [\"{{directorId}}\"],\n  \"notes\": \"E2E структурированная сессия\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/inventory-check/start-structured",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "inventory-check", "start-structured"]
+            },
+            "description": "Альтернатива 7.1: создаёт сессию с явной комиссией (`commissionMembers`: List<UUID>) и материально-ответственным лицом (`responsibleUserId`). Перезаписывает `inventorySessionId`, поэтому 7.2/7.3/7.4 после этого работают уже с новой сессией. В демо комиссия из одного директора — на проде это список UUID реальных сотрудников."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200/201', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "const body = pm.response.json();",
+                  "if (body && body.sessionId) {",
+                  "    pm.collectionVariables.set('inventorySessionId', body.sessionId);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "8. ERP Extractor (RPA)",
+      "description": "Извлечение поставок из внешней ERP — через RPA (UI-автоматизация) либо через REST API внешней системы.",
+      "item": [
+        {
+          "name": "8.1 Run Extractor (api mode)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/erp-extractor/run?mode=api",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "erp-extractor", "run"],
+              "query": [{ "key": "mode", "value": "api" }]
+            },
+            "description": "`mode=api` использует REST интеграцию (быстро, без UI). `mode=rpa` запускает RPA-скрипт — требует поднятого окружения с UI и драйвера."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "8.2 List Pending Deliveries",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/erp-extractor/deliveries",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "erp-extractor", "deliveries"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "8.3 Extraction Log",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/erp-extractor/log",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "erp-extractor", "log"]
+            },
+            "description": "Журнал последних 10 запусков по каждому источнику (RPA, API)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "9. Edge Cases (negative)",
+      "description": "Негативные проверки: невалидные креды, отсутствие токена, дубликат УНП, битый refresh. Запускать после папки 1 (orgUnp уже занят).",
+      "item": [
+        {
+          "name": "9.1 Login — wrong password (401)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{directorEmail}}\",\n  \"password\": \"WrongPassword!\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/auth/login",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "auth", "login"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Статус 401 или 403', () => pm.expect(pm.response.code).to.be.oneOf([400, 401, 403]));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "9.2 Get Me — без токена (401)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/auth/me",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "auth", "me"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Статус 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "9.3 Refresh — невалидный токен (401)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"00000000-0000-0000-0000-000000000000\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/auth/refresh",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "auth", "refresh"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Статус 400/401', () => pm.expect(pm.response.code).to.be.oneOf([400, 401]));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "9.4 Create Organization — дубликат УНП (409)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"ООО Дубль {{orgUnp}}\",\n  \"shortName\": \"Дубль\",\n  \"unp\": \"{{orgUnp}}\",\n  \"address\": \"г. Минск, ул. Дублирующая, 2\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/organizations",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "organizations"]
+            },
+            "description": "Тот же УНП, что и в 1.1 — должно отдать 409 Conflict (или 400, в зависимости от валидатора)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Статус 400/409', () => pm.expect(pm.response.code).to.be.oneOf([400, 409]));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "9.5 Validate Invitation — мусорный токен (400/404)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/invitations/validate?token=not-a-real-token",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "invitations", "validate"],
+              "query": [{ "key": "token", "value": "not-a-real-token" }]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Статус 400/404', () => pm.expect(pm.response.code).to.be.oneOf([400, 404]));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "10. Worker Onboarding & Role Negatives",
+      "description": "Полный цикл: директор выпускает приглашение → worker регистрируется через `/api/auth/register/invitation` (получает свой Bearer) → worker пробует DIRECTOR-only ручки (ожидаем 403) → директор блокирует/разблокирует. Запускать после папок 1–3 (нужны orgId, warehouseId).\n\nВажно: worker-запросы переопределяют auth на `{{workerAccessToken}}` на уровне запроса; директор-запросы используют коллекционный `{{accessToken}}`.",
+      "item": [
+        {
+          "name": "10.1 Director — Create Worker Invitation",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{workerEmail}}\",\n  \"role\": \"WORKER\",\n  \"warehouseId\": \"{{warehouseId}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/organizations/{{orgId}}/invitations",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "organizations", "{{orgId}}", "invitations"]
+            },
+            "description": "Pre-request генерирует уникальный `workerEmail` для прогона, чтобы регистрация в 10.2 могла его использовать (адрес инвайта и адрес регистрации должны совпадать)."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('workerEmail')) {",
+                  "    const ts = Date.now();",
+                  "    pm.collectionVariables.set('workerEmail', `worker.${ts}@wms.local`);",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200/201', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('invitationToken', body.invitationToken);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "10.2 Worker — Register via Invitation",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"invitationToken\": \"{{invitationToken}}\",\n  \"email\": \"{{workerEmail}}\",\n  \"password\": \"{{workerPassword}}\",\n  \"firstName\": \"Пётр\",\n  \"lastName\": \"Работников\",\n  \"middleName\": \"Иванович\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/auth/register/invitation",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "auth", "register", "invitation"]
+            },
+            "description": "Создаёт WORKER, привязанного к organizationId/warehouseId из инвайта. Возвращает AuthResponse с готовыми `accessToken`/`refreshToken` — сохраняем их в `workerAccessToken`/`workerRefreshToken`, чтобы не затереть директорский Bearer."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200/201', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('workerAccessToken', body.accessToken);",
+                  "pm.collectionVariables.set('workerRefreshToken', body.refreshToken);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "10.3 Worker — Get Me",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{workerAccessToken}}", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/auth/me",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "auth", "me"]
+            },
+            "description": "Захватываем `workerId` для PATCH-запросов блокировки/разблокировки."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Роль WORKER', () => pm.expect(body.role).to.eql('WORKER'));",
+                  "pm.test('organizationId совпадает с директорской', () => pm.expect(body.organizationId).to.eql(pm.collectionVariables.get('orgId')));",
+                  "pm.collectionVariables.set('workerId', body.userId);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "10.4 Director — List Organization Employees",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-User-Role", "value": "DIRECTOR" }],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/organizations/{{orgId}}/employees",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "organizations", "{{orgId}}", "employees"]
+            },
+            "description": "Должна вернуться `Page<EmployeeResponse>` с по крайней мере двумя записями: директором и worker'ом."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "const list = Array.isArray(body) ? body : (body.content || []);",
+                  "pm.test('Worker присутствует в списке', () => {",
+                  "    const wid = pm.collectionVariables.get('workerId');",
+                  "    pm.expect(list.some(e => e.userId === wid)).to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "10.5 Worker — Try Create Organization (403)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{workerAccessToken}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Worker не должен создавать org\",\n  \"shortName\": \"Hacker\",\n  \"unp\": \"999999999\",\n  \"address\": \"г. Минск\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/organizations",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "organizations"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Статус 403 (или 401)', () => pm.expect(pm.response.code).to.be.oneOf([401, 403]));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "10.6 Worker — Try Create Warehouse (403)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{workerAccessToken}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orgId\": \"{{orgId}}\",\n  \"name\": \"Worker не должен создавать склад\",\n  \"address\": \"г. Минск\",\n  \"responsibleUserId\": \"{{workerId}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/warehouses",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "warehouses"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Статус 403 (или 401)', () => pm.expect(pm.response.code).to.be.oneOf([401, 403]));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "10.7 Director — Block Worker",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-User-Role", "value": "DIRECTOR" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"blocked\": true\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/organizations/{{orgId}}/employees/{{workerId}}/status",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "organizations", "{{orgId}}", "employees", "{{workerId}}", "status"]
+            },
+            "description": "Org-service публикует `employee.status.changed` → SSO ставит `is_active=false`, после чего worker'ский Bearer должен перестать работать (но access-токен живёт до истечения 4ч TTL)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "10.8 Director — Unblock Worker",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-User-Role", "value": "DIRECTOR" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"blocked\": false\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/organizations/{{orgId}}/employees/{{workerId}}/status",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "organizations", "{{orgId}}", "employees", "{{workerId}}", "status"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "11. RabbitMQ Cross-Service Cascade",
+      "description": "Демонстрирует event-driven каскад между сервисами:\n\n1. **DELETE /api/organizations/{orgId}** — org-service помечает запись и публикует `organization.archived` в `organization.exchange`.\n2. **SSO** консьюмер чистит `organization_id` у всех пользователей этой org.\n3. **Warehouse-service** консьюмер удаляет склады, публикует `warehouse.deleted` → SSO чистит `warehouse_id`.\n\n⚠️ Доставка асинхронная. В тестах используется busy-wait ~2с в pre-request — это hack для E2E проверки. Если очередь нагружена, увеличь задержку или прогони папку повторно.\n\nЗапускать **последней** — после этого `orgId`/`warehouseId` инвалидируются, повторный run требует свежей коллекции (другой timestamp в 0.1).",
+      "item": [
+        {
+          "name": "11.1 Director — Delete Organization (trigger cascade)",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "X-User-Role", "value": "DIRECTOR" }],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/organizations/{{orgId}}",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "organizations", "{{orgId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200/204', () => pm.expect(pm.response.code).to.be.oneOf([200, 202, 204]));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "11.2 Verify Org State (после consumer)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/organizations/{{orgId}}",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "organizations", "{{orgId}}"]
+            },
+            "description": "Pre-request делает busy-wait ~2с, чтобы дать RabbitMQ доставить и сервисам обработать `organization.archived`."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Busy-wait ~2 секунды для асинхронной доставки RabbitMQ.",
+                  "// В Postman нет реального sleep, поэтому блокируем event loop.",
+                  "const start = Date.now();",
+                  "while (Date.now() - start < 2000) { /* spin */ }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Допустимо: 404 (org стёрта) ИЛИ 200 со status=ARCHIVED.",
+                  "pm.test('Org либо удалена, либо в статусе ARCHIVED', () => {",
+                  "    if (pm.response.code === 404) return;",
+                  "    pm.expect(pm.response.code).to.eql(200);",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.status).to.eql('ARCHIVED');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "11.3 Verify Warehouse Cascade",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/warehouses/{{warehouseId}}/info",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "warehouses", "{{warehouseId}}", "info"]
+            },
+            "description": "После consumer'а warehouse-service склад должен быть удалён. Pre-request снова ждёт ~2с на случай, если 11.2 проскочила раньше доставки сообщения в warehouse.exchange."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const start = Date.now();",
+                  "while (Date.now() - start < 2000) { /* spin */ }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Склад удалён (404 ожидаемо)', () => pm.expect(pm.response.code).to.be.oneOf([404, 410]));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "11.4 Verify Worker Lost organizationId",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{workerAccessToken}}", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/auth/me",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["api", "auth", "me"]
+            },
+            "description": "После каскада SSO должен очистить `organization_id` у worker'a. Тест лояльный: либо 401 (если is_active=false и фильтр режет), либо 200 с organizationId=null."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Worker отвязан от org или заблокирован', () => {",
+                  "    if (pm.response.code === 401 || pm.response.code === 403) return;",
+                  "    pm.expect(pm.response.code).to.eql(200);",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.organizationId == null || body.organizationId === '').to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    }
+  ]
+}

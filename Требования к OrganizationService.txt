@@ -1,3 +1,9 @@
+Данный микросервис представляет собой сервис - работу с организацией.
+Сама по себе, в контексте системы, организация является сущностью, у которой есть руководитель(DIRECTOR), сотрудники и склады.
+Данный сервис должен предоставлять следующие функции:
+1. Управление организацией. Данная функция включает в себя множество различных подфункций, а именно, создание организации с вводом необходимой информации(наименование, короткая форма, ИНН, адрес). Также подфункция редактирования данных о организации(наимнование, адрес, короткая форма). Уникальность организации проверяется по ИНН (unp в бд), он не должен повторятся. А также удаление организации и ее просмотр. В случае удаления организации, ее сотрудники увольняются, все кроме директора.
+По сути это основная функция которая должна быть реализована. Не забываем о связи с Warehouse и SSO сервисами.
+Скрипт бд
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 CREATE TYPE org_status AS ENUM ('ACTIVE', 'ARCHIVED');
@@ -7,13 +13,14 @@ CREATE TABLE organization_read_model
     org_id     UUID PRIMARY KEY      DEFAULT uuid_generate_v4(),
     name       VARCHAR(255) NOT NULL,
     short_name VARCHAR(255),
-    unp        VARCHAR(512) NOT NULL,
+    unp        VARCHAR(20)  NOT NULL,
     address    VARCHAR(512),
     status     org_status   NOT NULL DEFAULT 'ACTIVE',
     created_at TIMESTAMP    NOT NULL DEFAULT now(),
     updated_at TIMESTAMP    NOT NULL DEFAULT now(),
     CONSTRAINT uk_organization_name UNIQUE (name),
-    CONSTRAINT uk_organization_unp UNIQUE (unp)
+    CONSTRAINT uk_organization_unp UNIQUE (unp),
+    CONSTRAINT chk_organization_unp_format CHECK (unp ~ '^\d{9}$')
 );
 
 CREATE TABLE organization_events
