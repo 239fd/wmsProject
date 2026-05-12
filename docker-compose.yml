@@ -1,7 +1,6 @@
 version: "3.8"
 
 services:
-  # ==================== DATABASES ====================
   postgres-sso:
     image: postgres:16-alpine
     container_name: postgres-sso
@@ -86,7 +85,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # ==================== INFRASTRUCTURE ====================
   redis:
     image: redis:7-alpine
     container_name: redis
@@ -124,7 +122,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # ==================== BACKEND SERVICES ====================
   eureka-server:
     build:
       context: ./backend/eureka-server
@@ -331,7 +328,6 @@ services:
       retries: 5
       start_period: 60s
 
-  # ==================== FRONTEND ====================
   client:
     build:
       context: ./client

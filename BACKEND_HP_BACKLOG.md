@@ -57,7 +57,16 @@
 
 ---
 
-## HP-2. Пагинация на всех списочных endpoints
+## HP-2. Пагинация на всех списочных endpoints 🟡 В ПРОЦЕССЕ (старт 2026-05-11)
+
+### Прогресс
+
+- ✅ **Эталон закрыт на Suppliers** (2026-05-11). Не запущен/не проверен в работающем стеке — ждёт прогона `/main/suppliers`.
+  - Backend: `SupplierRepository` (`Page<> findByIsActiveTrue(Pageable)`, `Page<> findByOrganizationIdAndIsActiveTrue(UUID, Pageable)` рядом со старыми `List<>`), `SupplierService.getAll(orgId, Pageable) → Page<SupplierResponse>` рядом со старым `getAll(orgId) → List`, `SupplierController` (`@PageableDefault(size=20, sort="name")` + `MAX_PAGE_SIZE=100` capping через `capSize()`). Контракт ответа стал `Page<SupplierResponse>` — **breaking**.
+  - Frontend: `services/supplierService.js` — `list({page, size, sort})`, default `size=1000` чтобы autocomplete-кейсы (`useSuppliers` через Redux-slice) получали «весь» справочник одним вызовом. `pages/SuppliersPage.js` — отвязан от Redux-кеша, локальный state `{page, rowsPerPage}`, `<TablePagination>` (10/20/50/100, RU-локализация `labelRowsPerPage`/`labelDisplayedRows`). После CRUD: `dispatch(invalidateSuppliers())` + локальный refetch — autocomplete на других страницах подхватит при следующем mount.
+- ❌ **product-service pending:** Supply, ShipmentRequest, Product (getAll/byCategory), Batch (byProduct/getAll), Inventory (byWarehouse/byProduct), Operation (markedItems), ErpExtractor (deliveries).
+- ❌ **warehouse-service pending:** Warehouse (getAll/getByOrg), Rack (getRacksByWarehouse/getCellsByRack/getSlotsByRack).
+- ❌ **Frontend pending:** SuppliesPage, ShipPage (requests + history), ReceivePage history tab, AnalyticsPage Operations tab, DocumentsPage (UI на уже-paginated бэке).
 
 ### Текущее состояние (проверено 2026-05-08)
 
