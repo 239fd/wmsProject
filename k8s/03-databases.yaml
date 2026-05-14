@@ -2,7 +2,6 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: postgres-organization
-  namespace: wms
 spec:
   serviceName: postgres-organization
   replicas: 1
@@ -17,6 +16,10 @@ spec:
     spec:
       nodeSelector:
         node-role.storage: "true"
+      volumes:
+      - name: db-init-scripts
+        configMap:
+          name: db-init-scripts
       containers:
       - name: postgres
         image: postgres:16-alpine
@@ -38,6 +41,9 @@ spec:
         volumeMounts:
         - name: postgres-storage
           mountPath: /var/lib/postgresql/data
+        - name: db-init-scripts
+          mountPath: /docker-entrypoint-initdb.d/init.sql
+          subPath: organizationDB.sql
 
         resources:
           requests:
@@ -60,7 +66,6 @@ apiVersion: v1
 kind: Service
 metadata:
   name: postgres-organization
-  namespace: wms
 spec:
   clusterIP: None
   ports:
@@ -72,7 +77,6 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: postgres-product
-  namespace: wms
 spec:
   serviceName: postgres-product
   replicas: 1
@@ -87,6 +91,10 @@ spec:
     spec:
       nodeSelector:
         node-role.storage: "true"
+      volumes:
+      - name: db-init-scripts
+        configMap:
+          name: db-init-scripts
       containers:
       - name: postgres
         image: postgres:16-alpine
@@ -108,6 +116,9 @@ spec:
         volumeMounts:
         - name: postgres-storage
           mountPath: /var/lib/postgresql/data
+        - name: db-init-scripts
+          mountPath: /docker-entrypoint-initdb.d/init.sql
+          subPath: productDB.sql
 
         resources:
           requests:
@@ -130,7 +141,6 @@ apiVersion: v1
 kind: Service
 metadata:
   name: postgres-product
-  namespace: wms
 spec:
   clusterIP: None
   ports:
@@ -142,7 +152,6 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: postgres-warehouse
-  namespace: wms
 spec:
   serviceName: postgres-warehouse
   replicas: 1
@@ -157,6 +166,10 @@ spec:
     spec:
       nodeSelector:
         node-role.storage: "true"
+      volumes:
+      - name: db-init-scripts
+        configMap:
+          name: db-init-scripts
       containers:
       - name: postgres
         image: postgres:16-alpine
@@ -178,6 +191,9 @@ spec:
         volumeMounts:
         - name: postgres-storage
           mountPath: /var/lib/postgresql/data
+        - name: db-init-scripts
+          mountPath: /docker-entrypoint-initdb.d/init.sql
+          subPath: warehouseDB.sql
 
         resources:
           requests:
@@ -200,7 +216,6 @@ apiVersion: v1
 kind: Service
 metadata:
   name: postgres-warehouse
-  namespace: wms
 spec:
   clusterIP: None
   ports:
@@ -212,7 +227,6 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: postgres-sso
-  namespace: wms
 spec:
   serviceName: postgres-sso
   replicas: 1
@@ -227,6 +241,10 @@ spec:
     spec:
       nodeSelector:
         node-role.storage: "true"
+      volumes:
+      - name: db-init-scripts
+        configMap:
+          name: db-init-scripts
       containers:
       - name: postgres
         image: postgres:16-alpine
@@ -248,6 +266,9 @@ spec:
         volumeMounts:
         - name: postgres-storage
           mountPath: /var/lib/postgresql/data
+        - name: db-init-scripts
+          mountPath: /docker-entrypoint-initdb.d/init.sql
+          subPath: userDB.sql
 
         resources:
           requests:
@@ -270,7 +291,6 @@ apiVersion: v1
 kind: Service
 metadata:
   name: postgres-sso
-  namespace: wms
 spec:
   clusterIP: None
   ports:
@@ -282,7 +302,6 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: redis
-  namespace: wms
 spec:
   serviceName: redis
   replicas: 1
@@ -329,7 +348,6 @@ apiVersion: v1
 kind: Service
 metadata:
   name: redis
-  namespace: wms
 spec:
   clusterIP: None
   ports:
@@ -337,88 +355,4 @@ spec:
   selector:
     app: redis
 ---
-apiVersion: apps/v1
-kind: StatefulSet
-metadata:
-  name: rabbitmq
-  namespace: wms
-spec:
-  serviceName: rabbitmq
-  replicas: 1
-  selector:
-    matchLabels:
-      app: rabbitmq
-  template:
-    metadata:
-      labels:
-        app: rabbitmq
-        tier: infrastructure
-    spec:
-      nodeSelector:
-        node-role.storage: "true"
-      containers:
-      - name: rabbitmq
-        image: rabbitmq:3.12-management-alpine
-        ports:
-        - containerPort: 5672
-          name: amqp
-        - containerPort: 15672
-          name: management
-        env:
-        - name: RABBITMQ_DEFAULT_USER
-          valueFrom:
-            secretKeyRef:
-              name: rabbitmq-secret
-              key: rabbitmq-user
-        - name: RABBITMQ_DEFAULT_PASS
-          valueFrom:
-            secretKeyRef:
-              name: rabbitmq-secret
-              key: rabbitmq-password
-        volumeMounts:
-        - name: rabbitmq-storage
-          mountPath: /var/lib/rabbitmq
-        resources:
-          requests:
-            memory: "256Mi"
-            cpu: "100m"
-          limits:
-            memory: "512Mi"
-            cpu: "300m"
-        readinessProbe:
-          exec:
-            command: ["rabbitmq-diagnostics", "-q", "ping"]
-          initialDelaySeconds: 20
-          periodSeconds: 10
-          timeoutSeconds: 5
-        livenessProbe:
-          exec:
-            command: ["rabbitmq-diagnostics", "-q", "ping"]
-          initialDelaySeconds: 30
-          periodSeconds: 30
-          timeoutSeconds: 10
-  volumeClaimTemplates:
-  - metadata:
-      name: rabbitmq-storage
-    spec:
-      accessModes: ["ReadWriteOnce"]
-      storageClassName: standard
-      resources:
-        requests:
-          storage: 5Gi
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: rabbitmq
-  namespace: wms
-spec:
-  clusterIP: None
-  ports:
-  - port: 5672
-    name: amqp
-  - port: 15672
-    name: management
-  selector:
-    app: rabbitmq
 

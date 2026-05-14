@@ -1,0 +1,338 @@
+{
+  "info": {
+    "_postman_id": "rpa-1c-flow-2026-05-13",
+    "name": "WMS · RPA-1 (1С) flow",
+    "description": "End-to-end сценарий: регистрация → организация → склад → товар → поставщик → запуск RPA-1 (1С парсинг через WinAppDriver) → проверка planned_deliveries.\n\nПорядок выполнения — сверху вниз. accessToken/orgId/warehouseId/productId/supplierId сохраняются в коллекционные переменные автоматически через тестовые скрипты.\n\nPrerequisites:\n1. docker-compose up -d (инфра: PG×4, Redis, RabbitMQ, MinIO, eureka, gateway, sso, organization, warehouse, product, document) либо gradle bootRun каждого сервиса.\n2. WinAppDriver запущен на 127.0.0.1:4723.\n3. rpa.onec.enabled=true в product-service/src/main/resources/rpa.properties.\n4. utdemo база доступна по C:\\Users\\pavel\\OneDrive\\Документы\\utdemo.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1 · Register director",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"director-{{$timestamp}}@wms.test\",\n  \"password\": \"Str0ngP@ssword\",\n  \"firstName\": \"Александр\",\n  \"lastName\": \"Сидоров\",\n  \"middleName\": \"Петрович\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/register/director",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "auth", "register", "director"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const r = pm.response.json();",
+              "pm.collectionVariables.set('accessToken', r.accessToken);",
+              "pm.collectionVariables.set('refreshToken', r.refreshToken);",
+              "pm.collectionVariables.set('directorEmail', pm.request.body.raw.match(/director-\\d+@wms\\.test/)[0]);",
+              "pm.test('access token saved', () => pm.expect(r.accessToken).to.be.a('string'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2 · Whoami (fetch userId)",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/me",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "auth", "me"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const r = pm.response.json();",
+              "pm.collectionVariables.set('userId', r.userId);",
+              "pm.test('userId saved', () => pm.expect(r.userId).to.be.a('string'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "3 · Create organization",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-User-Id", "value": "{{userId}}" },
+          { "key": "X-User-Role", "value": "DIRECTOR" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"ООО Тестовая компания\",\n  \"shortName\": \"ООО Тест\",\n  \"unp\": \"123456789\",\n  \"address\": \"г. Минск, ул. Тестовая, 1\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/organizations",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "organizations"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const r = pm.response.json();",
+              "pm.collectionVariables.set('orgId', r.orgId || r.id);",
+              "pm.test('orgId saved', () => pm.expect(pm.collectionVariables.get('orgId')).to.be.a('string'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "4 · Re-login (получить новый JWT с orgId)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{directorEmail}}\",\n  \"password\": \"Str0ngP@ssword\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/login",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "auth", "login"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const r = pm.response.json();",
+              "pm.collectionVariables.set('accessToken', r.accessToken);",
+              "pm.collectionVariables.set('refreshToken', r.refreshToken);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "5 · Create warehouse",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-User-Id", "value": "{{userId}}" },
+          { "key": "X-User-Role", "value": "DIRECTOR" },
+          { "key": "X-Organization-Id", "value": "{{orgId}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"orgId\": \"{{orgId}}\",\n  \"name\": \"Главный склад\",\n  \"address\": \"г. Минск, ул. Складская, 5\",\n  \"responsibleUserId\": \"{{userId}}\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/warehouses",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "warehouses"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const r = pm.response.json();",
+              "pm.collectionVariables.set('warehouseId', r.warehouseId || r.id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "6 · Create supplier",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-User-Id", "value": "{{userId}}" },
+          { "key": "X-User-Role", "value": "DIRECTOR" },
+          { "key": "X-Organization-Id", "value": "{{orgId}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"ОАО Молочные продукты\",\n  \"unp\": \"100234567\",\n  \"contactPerson\": \"Иванов Иван Иванович\",\n  \"phone\": \"+375291234567\",\n  \"email\": \"supplier@milk.by\",\n  \"address\": \"г. Минск, ул. Производственная, 10\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/suppliers",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "suppliers"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const r = pm.response.json();",
+              "pm.collectionVariables.set('supplierId', r.supplierId || r.id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "7 · Create product",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-User-Id", "value": "{{userId}}" },
+          { "key": "X-User-Role", "value": "DIRECTOR" },
+          { "key": "X-Organization-Id", "value": "{{orgId}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Молоко 3.2%, 1л\",\n  \"sku\": \"MILK-3.2-1L\",\n  \"barcode\": \"4810000000123\",\n  \"category\": \"Молочные продукты\",\n  \"description\": \"Молоко питьевое пастеризованное\",\n  \"unitOfMeasure\": \"л\",\n  \"weightKg\": 1.03,\n  \"volumeM3\": 0.001\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/products",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "products"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const r = pm.response.json();",
+              "pm.collectionVariables.set('productId', r.productId || r.id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "8 · ▶ Run RPA-1 (1С парсинг)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+          { "key": "X-User-Id", "value": "{{userId}}" },
+          { "key": "X-User-Role", "value": "DIRECTOR" },
+          { "key": "X-Organization-Id", "value": "{{orgId}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/erp-extractor/run?mode=onec",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "erp-extractor", "run"],
+          "query": [
+            { "key": "mode", "value": "onec", "description": "onec | rpa | api" }
+          ]
+        },
+        "description": "Запускает OneCWinAppExtractorImpl. На экране должна открыться 1С (1cv8ct.exe с базой utdemo), бот логинится Администратором, переходит в Закупки → Заказы поставщикам, читает таблицу, сохраняет PlannedDelivery строки, закрывает 1С.\n\nResponse: { source: '1C-RPA', found: N, new: M, success: true }"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const r = pm.response.json();",
+              "pm.test('extraction success', () => pm.expect(r.success).to.eql(true));",
+              "pm.test('source = 1C-RPA', () => pm.expect(r.source).to.eql('1C-RPA'));",
+              "console.log('Found:', r.found, '· New:', r.new);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "9 · Verify — list planned deliveries",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+          { "key": "X-User-Id", "value": "{{userId}}" },
+          { "key": "X-User-Role", "value": "DIRECTOR" },
+          { "key": "X-Organization-Id", "value": "{{orgId}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/erp-extractor/deliveries?size=50&sort=extractedAt,desc",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "erp-extractor", "deliveries"],
+          "query": [
+            { "key": "size", "value": "50" },
+            { "key": "sort", "value": "extractedAt,desc" }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const r = pm.response.json();",
+              "const items = r.content || r;",
+              "pm.test('planned_deliveries есть', () => pm.expect(items.length).to.be.greaterThan(0));",
+              "console.log('Total deliveries:', items.length);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "10 · Verify — extraction log",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+          { "key": "X-User-Id", "value": "{{userId}}" },
+          { "key": "X-User-Role", "value": "DIRECTOR" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/erp-extractor/log",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "erp-extractor", "log"]
+        }
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8765",
+      "description": "API Gateway"
+    },
+    { "key": "accessToken", "value": "" },
+    { "key": "refreshToken", "value": "" },
+    { "key": "userId", "value": "" },
+    { "key": "directorEmail", "value": "" },
+    { "key": "orgId", "value": "" },
+    { "key": "warehouseId", "value": "" },
+    { "key": "supplierId", "value": "" },
+    { "key": "productId", "value": "" }
+  ]
+}

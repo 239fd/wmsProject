@@ -2,7 +2,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: eureka-server
-  namespace: wms
 spec:
   replicas: 1
   selector:
@@ -20,10 +19,13 @@ spec:
     spec:
       containers:
       - name: eureka-server
-        image: wms/eureka-server:latest
-        imagePullPolicy: IfNotPresent
+        image: eureka-server:latest
+        imagePullPolicy: Never
         ports:
         - containerPort: 8761
+        envFrom:
+        - configMapRef:
+            name: backend-common-env
         env:
         - name: SERVER_PORT
           value: "8761"
@@ -51,7 +53,6 @@ apiVersion: v1
 kind: Service
 metadata:
   name: eureka-server
-  namespace: wms
 spec:
   type: ClusterIP
   ports:
@@ -64,7 +65,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: api-gateway
-  namespace: wms
 spec:
   replicas: 2
   selector:
@@ -82,17 +82,34 @@ spec:
     spec:
       containers:
       - name: api-gateway
-        image: wms/api-gateway:latest
-        imagePullPolicy: IfNotPresent
+        image: api-gateway:latest
+        imagePullPolicy: Never
         ports:
         - containerPort: 8765
+        envFrom:
+        - configMapRef:
+            name: backend-common-env
         env:
         - name: SERVER_PORT
           value: "8765"
-        - name: EUREKA_CLIENT_SERVICEURL_DEFAULTZONE
-          value: "http://eureka-server:8761/eureka"
+        - name: EUREKA_INSTANCE_IP_ADDRESS
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: EUREKA_INSTANCE_HOSTNAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: EUREKA_INSTANCE_INSTANCE_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
         - name: SSO_SERVICE_URL
           value: "http://sso-service:8000"
+        - name: REDIS_HOST
+          value: "redis"
+        - name: REDIS_PORT
+          value: "6379"
         resources:
           requests:
             memory: "512Mi"
@@ -117,7 +134,6 @@ apiVersion: v1
 kind: Service
 metadata:
   name: api-gateway
-  namespace: wms
 spec:
   type: NodePort
   ports:
@@ -131,7 +147,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: sso-service
-  namespace: wms
 spec:
   replicas: 2
   selector:
@@ -149,13 +164,28 @@ spec:
     spec:
       containers:
       - name: sso-service
-        image: wms/sso-service:latest
-        imagePullPolicy: IfNotPresent
+        image: sso-service:latest
+        imagePullPolicy: Never
         ports:
         - containerPort: 8000
+        envFrom:
+        - configMapRef:
+            name: backend-common-env
         env:
         - name: SERVER_PORT
           value: "8000"
+        - name: EUREKA_INSTANCE_IP_ADDRESS
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: EUREKA_INSTANCE_HOSTNAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: EUREKA_INSTANCE_INSTANCE_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
         - name: SPRING_DATASOURCE_URL
           value: "jdbc:postgresql://postgres-sso:5432/user_db"
         - name: SPRING_DATASOURCE_USERNAME
@@ -172,10 +202,20 @@ spec:
           value: "redis"
         - name: SPRING_DATA_REDIS_PORT
           value: "6379"
-        - name: EUREKA_CLIENT_SERVICEURL_DEFAULTZONE
-          value: "http://eureka-server:8761/eureka"
-        - name: EUREKA_INSTANCE_PREFER_IP_ADDRESS
-          value: "true"
+        - name: SPRING_RABBITMQ_HOST
+          value: "rabbitmq"
+        - name: SPRING_RABBITMQ_PORT
+          value: "5672"
+        - name: SPRING_RABBITMQ_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: rabbitmq-secret
+              key: rabbitmq-user
+        - name: SPRING_RABBITMQ_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: rabbitmq-secret
+              key: rabbitmq-password
         resources:
           requests:
             memory: "512Mi"
@@ -200,7 +240,6 @@ apiVersion: v1
 kind: Service
 metadata:
   name: sso-service
-  namespace: wms
 spec:
   type: ClusterIP
   ports:
@@ -213,7 +252,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: organization-service
-  namespace: wms
 spec:
   replicas: 2
   selector:
@@ -231,13 +269,28 @@ spec:
     spec:
       containers:
       - name: organization-service
-        image: wms/organization-service:latest
-        imagePullPolicy: IfNotPresent
+        image: organization-service:latest
+        imagePullPolicy: Never
         ports:
         - containerPort: 8010
+        envFrom:
+        - configMapRef:
+            name: backend-common-env
         env:
         - name: SERVER_PORT
           value: "8010"
+        - name: EUREKA_INSTANCE_IP_ADDRESS
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: EUREKA_INSTANCE_HOSTNAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: EUREKA_INSTANCE_INSTANCE_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
         - name: SPRING_DATASOURCE_URL
           value: "jdbc:postgresql://postgres-organization:5432/organization_db"
         - name: SPRING_DATASOURCE_USERNAME
@@ -264,10 +317,6 @@ spec:
             secretKeyRef:
               name: rabbitmq-secret
               key: rabbitmq-password
-        - name: EUREKA_CLIENT_SERVICEURL_DEFAULTZONE
-          value: "http://eureka-server:8761/eureka"
-        - name: EUREKA_INSTANCE_PREFER_IP_ADDRESS
-          value: "true"
         resources:
           requests:
             memory: "512Mi"
@@ -292,7 +341,6 @@ apiVersion: v1
 kind: Service
 metadata:
   name: organization-service
-  namespace: wms
 spec:
   type: ClusterIP
   ports:
@@ -305,7 +353,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: warehouse-service
-  namespace: wms
 spec:
   replicas: 2
   selector:
@@ -323,13 +370,28 @@ spec:
     spec:
       containers:
       - name: warehouse-service
-        image: wms/warehouse-service:latest
-        imagePullPolicy: IfNotPresent
+        image: warehouse-service:latest
+        imagePullPolicy: Never
         ports:
         - containerPort: 8020
+        envFrom:
+        - configMapRef:
+            name: backend-common-env
         env:
         - name: SERVER_PORT
           value: "8020"
+        - name: EUREKA_INSTANCE_IP_ADDRESS
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: EUREKA_INSTANCE_HOSTNAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: EUREKA_INSTANCE_INSTANCE_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
         - name: SPRING_DATASOURCE_URL
           value: "jdbc:postgresql://postgres-warehouse:5432/warehouse_db"
         - name: SPRING_DATASOURCE_USERNAME
@@ -356,10 +418,6 @@ spec:
             secretKeyRef:
               name: rabbitmq-secret
               key: rabbitmq-password
-        - name: EUREKA_CLIENT_SERVICEURL_DEFAULTZONE
-          value: "http://eureka-server:8761/eureka"
-        - name: EUREKA_INSTANCE_PREFER_IP_ADDRESS
-          value: "true"
         resources:
           requests:
             memory: "512Mi"
@@ -384,7 +442,6 @@ apiVersion: v1
 kind: Service
 metadata:
   name: warehouse-service
-  namespace: wms
 spec:
   type: ClusterIP
   ports:
@@ -397,7 +454,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: product-service
-  namespace: wms
 spec:
   replicas: 2
   selector:
@@ -415,13 +471,28 @@ spec:
     spec:
       containers:
       - name: product-service
-        image: wms/product-service:latest
-        imagePullPolicy: IfNotPresent
+        image: product-service:latest
+        imagePullPolicy: Never
         ports:
         - containerPort: 8030
+        envFrom:
+        - configMapRef:
+            name: backend-common-env
         env:
         - name: SERVER_PORT
           value: "8030"
+        - name: EUREKA_INSTANCE_IP_ADDRESS
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: EUREKA_INSTANCE_HOSTNAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: EUREKA_INSTANCE_INSTANCE_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
         - name: SPRING_DATASOURCE_URL
           value: "jdbc:postgresql://postgres-product:5432/product_db"
         - name: SPRING_DATASOURCE_USERNAME
@@ -448,10 +519,20 @@ spec:
             secretKeyRef:
               name: rabbitmq-secret
               key: rabbitmq-password
-        - name: EUREKA_CLIENT_SERVICEURL_DEFAULTZONE
-          value: "http://eureka-server:8761/eureka"
-        - name: EUREKA_INSTANCE_PREFER_IP_ADDRESS
-          value: "true"
+        - name: MINIO_ENDPOINT
+          value: "http://minio:9000"
+        - name: MINIO_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: minio-secrets
+              key: access-key
+        - name: MINIO_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: minio-secrets
+              key: secret-key
+        - name: MINIO_BUCKET
+          value: "wms-documents"
         resources:
           requests:
             memory: "512Mi"
@@ -476,7 +557,6 @@ apiVersion: v1
 kind: Service
 metadata:
   name: product-service
-  namespace: wms
 spec:
   type: ClusterIP
   ports:
@@ -489,7 +569,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: document-service
-  namespace: wms
 spec:
   replicas: 2
   selector:
@@ -507,17 +586,28 @@ spec:
     spec:
       containers:
       - name: document-service
-        image: wms/document-service:latest
-        imagePullPolicy: IfNotPresent
+        image: document-service:latest
+        imagePullPolicy: Never
         ports:
         - containerPort: 8040
+        envFrom:
+        - configMapRef:
+            name: backend-common-env
         env:
         - name: SERVER_PORT
           value: "8040"
-        - name: EUREKA_CLIENT_SERVICEURL_DEFAULTZONE
-          value: "http://eureka-server:8761/eureka"
-        - name: EUREKA_INSTANCE_PREFER_IP_ADDRESS
-          value: "true"
+        - name: EUREKA_INSTANCE_IP_ADDRESS
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: EUREKA_INSTANCE_HOSTNAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: EUREKA_INSTANCE_INSTANCE_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
         resources:
           requests:
             memory: "512Mi"
@@ -542,7 +632,6 @@ apiVersion: v1
 kind: Service
 metadata:
   name: document-service
-  namespace: wms
 spec:
   type: ClusterIP
   ports:

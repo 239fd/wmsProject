@@ -2,7 +2,6 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: prometheus-config
-  namespace: wms
 data:
   prometheus.yml: |
     global:
@@ -28,11 +27,44 @@ data:
           replacement: $1:$2
           target_label: __address__
 ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+  namespace: wms
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: prometheus
+rules:
+- apiGroups: [""]
+  resources:
+  - nodes
+  - nodes/proxy
+  - pods
+  - services
+  - endpoints
+  - namespaces
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus
+subjects:
+- kind: ServiceAccount
+  name: prometheus
+  namespace: wms
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: prometheus
-  namespace: wms
 spec:
   replicas: 1
   selector:
@@ -43,8 +75,7 @@ spec:
       labels:
         app: prometheus
     spec:
-      nodeSelector:
-        node-role.infrastructure: "true"
+      serviceAccountName: prometheus
       containers:
       - name: prometheus
         image: prom/prometheus:latest
@@ -73,7 +104,6 @@ apiVersion: v1
 kind: Service
 metadata:
   name: prometheus
-  namespace: wms
 spec:
   type: ClusterIP
   ports:
@@ -86,7 +116,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: grafana
-  namespace: wms
 spec:
   replicas: 1
   selector:
@@ -97,8 +126,6 @@ spec:
       labels:
         app: grafana
     spec:
-      nodeSelector:
-        node-role.infrastructure: "true"
       containers:
       - name: grafana
         image: grafana/grafana:latest
@@ -125,11 +152,10 @@ apiVersion: v1
 kind: Service
 metadata:
   name: grafana
-  namespace: wms
 spec:
   type: ClusterIP
   ports:
-  - port: 3001
+  - port: 3000
     targetPort: 3000
   selector:
     app: grafana
@@ -137,59 +163,7 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: loki
-  namespace: wms
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: loki
-  template:
-    metadata:
-      labels:
-        app: loki
-    spec:
-      nodeSelector:
-        node-role.infrastructure: "true"
-      containers:
-      - name: loki
-        image: grafana/loki:latest
-        ports:
-        - containerPort: 3100
-        args:
-        - -config.file=/etc/loki/local-config.yaml
-        volumeMounts:
-        - name: storage
-          mountPath: /loki
-        resources:
-          requests:
-            memory: "256Mi"
-            cpu: "100m"
-          limits:
-            memory: "512Mi"
-            cpu: "250m"
-      volumes:
-      - name: storage
-        emptyDir: {}
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: loki
-  namespace: wms
-spec:
-  type: ClusterIP
-  ports:
-  - port: 3100
-    targetPort: 3100
-  selector:
-    app: loki
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
   name: rabbitmq
-  namespace: wms
 spec:
   replicas: 1
   selector:
@@ -201,11 +175,9 @@ spec:
         app: rabbitmq
         tier: infrastructure
     spec:
-      nodeSelector:
-        node-role.infrastructure: "true"
       containers:
       - name: rabbitmq
-        image: rabbitmq:3-management-alpine
+        image: rabbitmq:3.13-management
         ports:
         - containerPort: 5672
           name: amqp
@@ -213,7 +185,10 @@ spec:
           name: management
         env:
         - name: RABBITMQ_DEFAULT_USER
-          value: "admin"
+          valueFrom:
+            secretKeyRef:
+              name: rabbitmq-secret
+              key: rabbitmq-user
         - name: RABBITMQ_DEFAULT_PASS
           valueFrom:
             secretKeyRef:
@@ -225,28 +200,146 @@ spec:
         resources:
           requests:
             memory: "256Mi"
-            cpu: "200m"
+            cpu: "100m"
           limits:
             memory: "512Mi"
-            cpu: "400m"
+            cpu: "300m"
+        readinessProbe:
+          exec:
+            command: ["rabbitmq-diagnostics", "-q", "ping"]
+          initialDelaySeconds: 20
+          periodSeconds: 10
+          timeoutSeconds: 5
+        livenessProbe:
+          exec:
+            command: ["rabbitmq-diagnostics", "-q", "ping"]
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 10
       volumes:
       - name: rabbitmq-storage
-        emptyDir: {}
+        persistentVolumeClaim:
+          claimName: rabbitmq-storage-rabbitmq-0
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: rabbitmq
-  namespace: wms
 spec:
   type: ClusterIP
   ports:
-  - port: 5672
+  - name: amqp
+    port: 5672
     targetPort: 5672
-    name: amqp
-  - port: 15672
+  - name: management
+    port: 15672
     targetPort: 15672
-    name: management
   selector:
     app: rabbitmq
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rabbitmq-storage-rabbitmq-0
+spec:
+  accessModes:
+  - ReadWriteOnce
+  storageClassName: standard
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minio
+  template:
+    metadata:
+      labels:
+        app: minio
+        tier: infrastructure
+    spec:
+      containers:
+      - name: minio
+        image: minio/minio:latest
+        args:
+        - server
+        - /data
+        - --console-address
+        - ":9001"
+        ports:
+        - containerPort: 9000
+          name: api
+        - containerPort: 9001
+          name: console
+        env:
+        - name: MINIO_ROOT_USER
+          valueFrom:
+            secretKeyRef:
+              name: minio-secrets
+              key: access-key
+        - name: MINIO_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: minio-secrets
+              key: secret-key
+        volumeMounts:
+        - name: minio-storage
+          mountPath: /data
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        readinessProbe:
+          httpGet:
+            path: /minio/health/ready
+            port: 9000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /minio/health/live
+            port: 9000
+          initialDelaySeconds: 30
+          periodSeconds: 30
+      volumes:
+      - name: minio-storage
+        persistentVolumeClaim:
+          claimName: minio-storage-minio-0
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+spec:
+  type: ClusterIP
+  ports:
+  - name: api
+    port: 9000
+    targetPort: 9000
+  - name: console
+    port: 9001
+    targetPort: 9001
+  selector:
+    app: minio
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: minio-storage-minio-0
+spec:
+  accessModes:
+  - ReadWriteOnce
+  storageClassName: standard
+  resources:
+    requests:
+      storage: 20Gi
 

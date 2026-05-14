@@ -30,11 +30,11 @@
 
 ### Что открыто
 
-- **§1.5 фундамент (P0, NEW)** — MinIO + `GeneratedDocument` registry + `DocumentNumberService` + Workflow PAUSED при приёмке (см. §0.1 Q1+Q2+Q3+Q7). Делается **перед** HP-1.
-- **HP-1 RPA-шаблоны** (§1) — 4 RPA-generator'а + picking-list PDF; **шаблоны уже загружены** в `documents template/`. Scope сокращён до 11 типов (см. §0.1).
-- **HP-2 пагинация** на 11 endpoint'ах + 5 страницах фронта — эталон Suppliers готов, остальное pending.
-- **§1.5 P1** — Export flow с чекбоксом «На экспорт» + пакет ТН+CMR+invoice (см. §0.1 Q4) + inventory tooltip (Q6).
-- **RPA-расширение** (§2) — 4 канала: OData/1С + Selenium-ERP (web) + **WinAppDriver/JACOB для локального Word/Excel** + Appium/WinAppDriver для 1С толстого клиента. Доступ к 1С — ожидаем.
+- ~~**§1.5 фундамент (P0)** — MinIO + `GeneratedDocument` registry + `DocumentNumberService` + Workflow PAUSED при приёмке~~ ✅ **DONE 2026-05-13**. Compile + unit-tests зелёные. См. §1.5 «Что появилось в коде».
+- ~~**HP-1 RPA-шаблоны** (§1) — 4 RPA-generator'а + picking-list PDF~~ ✅ **DONE 2026-05-13** (generator'ы + cleanup мёртвых case'ов release-order/shipment-order/invoice-fact/discrepancy-act). 10 типов в `DocumentController`/`PdfDocumentService`/`DocumentRpaService`.
+- ~~**HP-2 пагинация**~~ ✅ **DONE 2026-05-13** — backend (product-service 10 endpoint'ов + warehouse-service 3 endpoint'а) + фронт (5 страниц: SuppliesPage, ShipPage requests, ReceivePage history, AnalyticsPage Operations, DocumentsPage migrated на `/api/document-registry`). Также добавлен `/api/document-registry/**` в `GatewayConfig.product-api`.
+- **§1.5 P1** — Export flow: ✅ **DONE 2026-05-13** (backend + фронт). Backend: миграция V7, enums ShipmentType/DocumentLayout/DomesticDocumentKind, ShipmentRequest entity + DTO + service + saga `documentIds: List<UUID>` + compensation через MinIO removeObject. Фронт: ShipPage CreateRequestDialog — чекбокс «На экспорт» на шаге 1, conditional UI (DOMESTIC: radio ТН/ТТН + horizontal/vertical; EXPORT: dropdown валюта USD/EUR/RUB/CNY + recipientCountry + recipientGln), summary на шаге 3, yup-схема с conditional валидацией (EXPORT запрещает BYN), `shipRequestService.complete()` без `documentTypes`. Inventory tooltip (Q6) — отдельный мелкий фронт-таск, не сделан.
+- **RPA-расширение** (§2) — **2 категории**: (1) **read-only парсинг 1С** через WinAppDriver (у инсталляции пользователя нет открытого API), (2) ✅ **RPA-2 Office bot закрыт 2026-05-13** — `OfficeDocumentBot` (`document-service/rpa/`) + endpoint `POST /api/documents/office/fill`. Требует Windows + MS Office + WinAppDriver на 127.0.0.1:4723, включается `rpa.office.enabled=true`. Доступ к 1С — ожидаем.
 - **F5 дизайн-система poyasn** (§3) — материалы у пользователя для следующей сессии.
 - **I5 Redis для api-gateway** (§4) — P2 (rate-limiter на /login).
 
@@ -58,7 +58,7 @@ backend/
 │       └── client/               — Feign-style WarehouseClient, DocumentClient
 ├── document-service/             — без БД, stateless
 │   └── src/main/java/by/bsuir/documentservice/
-│       ├── controller/           — DocumentController (14 типов), MockErpController
+│       ├── controller/           — DocumentController (10 endpoint'ов после cleanup), MockErpController
 │       ├── service/              — DocumentService, DataEnrichmentService
 │       └── rpa/                  — DocumentRpaService (Apache POI), PdfDocumentService (PDFBox)
 │   └── src/main/resources/
@@ -82,7 +82,7 @@ k8s/{00..09}-*.yaml                                             — Kubernetes m
 
 ### Готовность
 
-~95% backend, ~95% frontend. До защиты: **HP-1 + HP-2 + F5 + (опционально RPA→1С)**.
+~95% backend, ~95% frontend (на 2026-05-12). До защиты: **§1.5 P0 (MinIO + DocNumber + Workflow PAUSED) + HP-1 + HP-2 + §2 RPA-2 (Office bot) + RPA-1 (1С парсинг)**. F5 design — параллельно.
 
 ---
 
@@ -136,7 +136,7 @@ k8s/{00..09}-*.yaml                                             — Kubernetes m
    - Frontend: `client/src/services/supplierService.js`, `client/src/pages/SuppliersPage.js`.
    - Контракт ответа: `Page<X>` (Spring Data) — `content`, `totalElements`, `totalPages`, `number`, `size`. Default `size=20`, max `100`.
 
-5. **MockErpController** (`backend/document-service/src/main/java/by/bsuir/documentservice/controller/MockErpController.java`) — это **тестовая заглушка ERP** для демо/dev. Отдаёт login-форму + HTML-таблицу `<table id="deliveries-table">`. Используется RpaHtmlExtractorImpl + новым SeleniumErpExtractorImpl (§2.6). Не часть document-service по смыслу, переедет в отдельный модуль после защиты.
+5. **MockErpController** (`backend/document-service/src/main/java/by/bsuir/documentservice/controller/MockErpController.java`) — **dev-fallback**: тестовая заглушка ERP, отдаёт login-форму + HTML-таблицу `<table id="deliveries-table">`. Используется существующим `RpaHtmlExtractorImpl` (Jsoup) и `ApiExtractorImpl` (REST) для разработки без реального 1С. В production-режиме (RPA-1 через WinAppDriver на толстом 1С) не задействован. Не часть document-service по смыслу, переедет в отдельный модуль после защиты.
 
 6. **Текущее coverage:** **525 backend-тестов**, JaCoCo ≥50% во всех 5 сервисах. **Не ронять** — при изменениях смотри что новые методы покрыты или существующие тесты остались валидны. Запуск: `gradle allTestWithCoverage` (без Docker), `gradle allIntegrationTest` (с Docker).
 
@@ -154,7 +154,7 @@ k8s/{00..09}-*.yaml                                             — Kubernetes m
    - **ИНН вместо УНП** в UI-текстах (валидация 9 цифр оставлена для РБ). Поле `unp` в API-DTO остаётся.
    - **redux-persist + useDraft** уже подключены (F6). Черновики приёмки автосохраняются.
 
-9. **PDF cyrillic:** `document-service` использует **DejaVuSans.ttf** (`src/main/resources/fonts/`). 13 PDF generate-методов в `PdfDocumentService` (14 типов документов через alias `shipment-order` → `generateReleaseOrderPdf`) корректно рендерят кириллицу — НЕ возвращайте `Standard14Fonts.HELVETICA`, иначе всё развалится на любом русском тексте.
+9. **PDF cyrillic:** `document-service` использует **DejaVuSans.ttf** (`src/main/resources/fonts/`). PDF generate-методы в `PdfDocumentService` корректно рендерят кириллицу — НЕ возвращайте `Standard14Fonts.HELVETICA`, иначе всё развалится на любом русском тексте. После cleanup §1 в `PdfDocumentService` должно остаться **10 generate-методов** (под 10 типов после удаления `release-order`/`shipment-order`/`invoice-fact`/`discrepancy-act`).
 
 10. **Memory feedback (важно):** no comments в коде, no tests без явного запроса, no commits без явного запроса, backend first приоритет, дата в PLAN.md в Russian формате.
 
@@ -164,7 +164,16 @@ k8s/{00..09}-*.yaml                                             — Kubernetes m
 
 ### HP-1. RPA-шаблоны документов РБ ❌ PENDING
 
-**Контекст.** Scope сокращён с 14 до **11 типов** документов (2026-05-12, после QUESTIONS.md). Удалены: `release-order`/`shipment-order` (alias-пара), `invoice-fact` (счёт-фактура), `discrepancy-act` (теперь — раздел внутри `receipt-act`, см. §0.1 Q1). Удалить из `DocumentController`, `DocumentService`, `DocumentRpaService`, `PdfDocumentService`, `stub-info`, тестов.
+**Контекст.** Scope сокращён с 14 до **10 типов** документов (2026-05-12, после QUESTIONS.md). Удалены 4 типа: `release-order`/`shipment-order` (alias-пара), `invoice-fact` (счёт-фактура), `discrepancy-act` (теперь — раздел внутри `receipt-act`, см. §0.1 Q1).
+
+**Статус cleanup на 2026-05-13:**
+- ✅ Endpoint'ы для этих 4 типов удалены из `DocumentController.java` (осталось 10 POST'ов).
+- ❌ **Switch-case'ы** в `DocumentService.generateViaPdf` (`release-order` line 46, `invoice-fact` line 53, `discrepancy-act` line 57) **ещё живы**.
+- ❌ **PDF-методы** `generateReleaseOrderPdf` / `generateInvoiceFactPdf` / `generateDiscrepancyActPdf` в `PdfDocumentService.java` (lines 121/158/234) **ещё живы**.
+- ❌ Соответствующие mapper-методы в `DocumentService` (`generateShipmentOrder`/`generateInvoiceFact`/`generateDiscrepancyAct`) **ещё живы**.
+- ❌ Строки в `PdfDocumentServiceParameterizedTest` для удалённых типов **ещё живы**.
+- ❌ `stub-info` массив `documentTypes` — проверить и снять 4 строки.
+- ❌ Postman-коллекция `docs/postman/WMS-API-Collection.json` — снять 4 запроса.
 
 | # | Тип | PDF (PdfDocumentService, DejaVu Sans) | RPA POI шаблон (DocumentRpaService) |
 |---|---|---|---|
@@ -173,14 +182,19 @@ k8s/{00..09}-*.yaml                                             — Kubernetes m
 | 3 | inventory-report (инвентаризационная опись) | ✅ | ✅ `инвентарихационная опись.xls` |
 | 4 | write-off-act (акт списания) | ✅ | ✅ `списание.docx` |
 | 5 | waybill / ТТН | ✅ | ✅ `ттнls.xls` (+ `ttn-gor.xls` / `ttn-vert.xls` — выбор ориентации в payload) |
-| 6 | picking-list (лист подбора) | ✅ PDF: шапка «Лист подбора № {shipmentNumber}» + таблица `Товар \| SKU \| Поставка \| Место \| Кол-во \| Ед.` | ⚠️ Без POI-шаблона — только PDF. |
-| 7 | receipt-act (акт приёмки) | ✅ | 🟡 **Два шаблона, выбор по наличию расхождений:** `Акт приемки.RTF` (нет расхождений) / `Акт расхождения.xls` (есть расхождения, богатые поля п.40 N 1290). |
-| 8 | invoice (инвойс) | ✅ | 🟡 Шаблоны `blank-invojs.doc` + `obrazec-invojs.doc` (заготовка + образец). |
-| 9 | transport-note (ТН / товарная накладная) | ✅ | 🟡 Шаблоны `tn-gor.xls` + `tn-vert.xls` — выбор ориентации в payload. |
-| 10 | cmr (международная) | ✅ | 🟡 Шаблон `CMR Международная товарно-транспортная накладная.doc` (актуальный на правила 01.01.2026). |
-| 11 | (резерв) | | |
+| 6 | picking-list (лист подбора) | ✅ DONE 2026-05-13. PDF: шапка «Лист подбора № {shipmentNumber}» + таблица `Товар \| SKU \| Поставка \| Место \| Кол-во \| Ед.` через новый `buildTablePdf` helper в `PdfDocumentService`. | ⚠️ Без POI-шаблона — только PDF. |
+| 7 | receipt-act (акт приёмки) | ✅ | ✅ DONE 2026-05-13. Выбор внутри `generateReceiptAct(ReceiptActData)` по `data.hasDiscrepancies()`: `Акт расхождения.xls` (HSSF, богатые поля п.40 N 1290 с таблицей расхождений) / `Акт приемки.RTF` (text-replacement по `{{tokens}}` — токены добавит пользователь в шаблон). DTO `ReceiptActData` + mapper + кейс в `DocumentService.generateViaRpa`. **Калибровка ячеек (row, col) в xls — через Accessibility/Excel пользователя**, текущие позиции — baseline по паттерну `Приходной ордер.XLS`. |
+| 8 | invoice (инвойс) | ✅ | ✅ DONE 2026-05-13. `generateInvoice(InvoiceData)` через `HWPFDocument.getRange().replaceText(...)` на шаблоне `blank-invojs.doc`. Поле `currency` есть в DTO (для экспорта). DTO + mapper + кейс в `DocumentService.generateViaRpa`. **Шаблон требует `{{tokens}}`** в теле документа — пользователь добавит/откалибрует токены вручную. Поддерживаемые токены: `{{documentNumber}}`, `{{documentDate}}`, `{{currency}}`, `{{sellerName/Inn/Address}}`, `{{buyerName/Inn/Address}}`, `{{contractNumber/Date}}`, `{{totalAmount}}`, `{{totalAmountInWords}}`, `{{vatRate/Amount}}`, `{{responsiblePerson}}`, `{{notes}}`, `{{itemsTable}}` (multi-line список товаров). Если токена в шаблоне нет — replace тихо пропускается. |
+| 9 | transport-note (ТН / товарная накладная) | ✅ | ✅ DONE 2026-05-13. `generateTransportNote(TransportNoteData)` через HSSF. Выбор шаблона по `data.layout`: `tn-gor.xls` (horizontal — default) / `tn-vert.xls` (vertical). DTO `TransportNoteData` + `TransportItem` с НДС-полями + `currency` (для экспорта). Endpoint `POST /api/documents/transport-note?layout=horizontal\|vertical`. Шапка/реквизиты/таблица товаров с НДС/итоги/строка «Товар к доставке принял»/подписи. **Координаты ячеек — baseline**, точная калибровка под шаблон при первом запуске. |
+| 10 | cmr (международная) | ✅ | ✅ DONE 2026-05-13. `generateCmr(CmrData)` через `HWPFDocument.replaceText` на шаблоне `CMR Международная товарно-транспортная накладная.doc`. DTO с международными реквизитами: `shipperCountry/Gln`, `consigneeCountry/Gln`, `carrierName/vehicleNumber/driverName`, `placeOfLoading/Delivery`, `loadingDate/deliveryDate`, `currency` (default EUR), `hsCode` для HS-классификации товаров, веса/объёмы/задекл. стоимость, 3 подписи (shipper/carrier/consignee). Mapper + кейс в `DocumentService.generateViaRpa`. **Шаблон требует `{{tokens}}` вручную** — список токенов и `{{itemsTable}}` см. `DocumentRpaService.generateCmr`. |
 
-**Из PENDING осталось 4 generator'а** (receipt-act с 2 шаблонами, invoice, transport-note, cmr) + picking-list через PDF. picking-list — только PDF, без шаблона.
+**Generator'ы для 5 типов закрыты 2026-05-13** (receipt-act с 2 шаблонами, invoice, transport-note, cmr, picking-list PDF). picking-list — только PDF, без POI-шаблона.
+
+> **СТАТУС HP-1 НА 2026-05-13 ✅ ВСЁ ЗАКРЫТО.** Все 5 итераций generator'ов завершены: picking-list (PDF table) ✅, receipt-act (2 шаблона: HSSF xls для расхождений / RTF token-replace для нормальной приёмки) ✅, invoice (HWPF token-replace) ✅, transport-note (HSSF, 2 layout горизонт./вертик.) ✅, cmr (HWPF token-replace, междунар. реквизиты + currency) ✅. **Cleanup мёртвых типов** (`release-order`/`shipment-order`/`invoice-fact`/`discrepancy-act`) выполнен 2026-05-13 — удалены 3 case'а в `DocumentService.generateViaPdf` + 3 метода `generateReleaseOrderPdf/generateInvoiceFactPdf/generateDiscrepancyActPdf` в `PdfDocumentService` + 3 строки в `PdfDocumentServiceParameterizedTest` + DisplayName переписан с 14 на 10 типов. Compile + `:document-service:test` зелёные.
+>
+> **Что осталось у пользователя** (не код): калибровка координат ячеек в xls-шаблонах (`generateReceiptActXls`, `generateTransportNote` — baseline coords) + расстановка `{{tokens}}` в `.doc`/`.rtf` шаблонах (`blank-invojs.doc`, `Акт приемки.RTF`, `CMR ....doc`). Без этого generation запускается, но значения подставляются только в helper'ные клеточные позиции — текстовые токены пропускаются тихо.
+>
+> Дальше: HP-2 (warehouse-service + frontend) → Frontend миграция (DocumentsPage + ReceivePage кнопки) → §1.5.C export flow → §2 RPA каналы.
 
 **Что нужно сделать:**
 
@@ -228,7 +242,7 @@ k8s/{00..09}-*.yaml                                             — Kubernetes m
 7. **PDF-генераторы** в `PdfDocumentService` уже работают для всех 14 — но они отрисовывают **простые table-row построчно**, без реквизитов БР. Если надо привести PDF в соответствие с госформами — переделать через `PDPageContentStream.drawImage()` с embedded формой как фон + наложение текста в координаты.
 
 **Acceptance:**
-- Все **12 типов** работают на `?format=pdf`, `?format=xls`, `?format=docx`.
+- Все **10 типов** работают на `?format=pdf`, `?format=xls`, `?format=docx`.
 - `release-order`, `shipment-order`, `invoice-fact` полностью удалены (endpoint, DTO, generator, PDF-метод, маппер, тесты, Postman).
 - В сгенерированных XLS/DOCX присутствуют все обязательные реквизиты РБ.
 - `transport-note` принимает `?layout=horizontal|vertical`, выбирает соответствующий шаблон.
@@ -247,17 +261,54 @@ k8s/{00..09}-*.yaml                                             — Kubernetes m
 
 ### HP-2. Пагинация на всех list-endpoints 🟡 В ПРОЦЕССЕ
 
-**Эталон готов на Suppliers**, не проверен в работающем стеке:
-- Backend: `SupplierRepository` (Page<>-перегрузки), `SupplierService.getAll(orgId, Pageable)`, `SupplierController` (`@PageableDefault(size=20, sort="name")`, `MAX_PAGE_SIZE=100`).
-- Frontend: `services/supplierService.list({page,size,sort})` (default size=1000 для autocomplete), `SuppliersPage` (локальный state + `<TablePagination>`).
-- Контракт ответа: `Page<X>` (`content`, `totalElements`, `totalPages`, `number`, `size`) — **breaking**.
+**Эталон готов на Suppliers + product-service закрыт 2026-05-13:**
+- Backend pattern: `*Repository` (рядом со старыми `List<>` — `Page<>` перегрузки с `Pageable`), `*Service` (overload `getAll(..., Pageable) → Page<X>` рядом со старым `List<X>`), `*Controller` (`@PageableDefault(size=20, sort="...", direction=...)` + локальный `MAX_PAGE_SIZE=100` + `capSize()` helper). Контракт ответа — `Page<X>` (`content`, `totalElements`, `totalPages`, `number`, `size`) — **breaking** для фронта.
+- Frontend pattern (по эталону Suppliers): сервис принимает `{page,size,sort}`, default `size=1000` для autocomplete-кейсов; страница — локальный state + MUI `<TablePagination>` с 10/20/50/100 и RU-локализацией.
 
-**Pending по тому же шаблону:**
-- **product-service:** Supply, ShipmentRequest, Product (getAll/byCategory), Batch (byProduct/getAll), Inventory (byWarehouse/byProduct), Operation (markedItems), ErpExtractor (deliveries).
-- **warehouse-service:** Warehouse (getAll/getByOrg), Rack (getRacksByWarehouse/getCellsByRack/getSlotsByRack).
-- **Frontend:** SuppliesPage, ShipPage (requests + history), ReceivePage history tab, AnalyticsPage Operations tab, DocumentsPage (UI поверх уже-paginated бэка).
+**✅ product-service — 10 endpoint'ов закрыто 2026-05-13** (15 файлов изменено, compile + 186 тестов зелёные):
 
-**Оценка остатка: ~2-2.5 дня.** Acceptance в `BACKEND_HP_BACKLOG.md §HP-2`.
+| Endpoint | Default sort |
+|---|---|
+| `GET /api/supplies` | `createdAt DESC` |
+| `GET /api/operations/ship-requests` | `createdAt DESC` |
+| `GET /api/products` | `name ASC` |
+| `GET /api/products/category/{c}` | `name ASC` |
+| `GET /api/products/{p}/batches` | `createdAt DESC` |
+| `GET /api/batches` | `createdAt DESC` |
+| `GET /api/inventory/warehouse/{w}` | `lastUpdated DESC` |
+| `GET /api/inventory/product/{p}` | `lastUpdated DESC` |
+| `GET /api/operations/write-off/marked-items` | `countId DESC` |
+| `GET /api/erp-extractor/deliveries` | `expectedDate ASC` |
+
+Старые `List<X>` методы в service-слое **сохранены** для autocomplete-кейсов и внутренних вызовов (FEFOService и пр.). Только controller теперь возвращает `Page<X>`.
+
+**Тесты, поправленные под Page-контракт:**
+- `ProductControllerTest.java` — добавлен `import org.springframework.data.domain.{Page,PageImpl,PageRequest,Pageable}`, замокан `getAllProducts(Pageable)` и `getProductsByCategory(eq("..."), any(Pageable.class))`.
+- `ProductControllerIntegrationTest.java` — добавлен `PageableHandlerMethodArgumentResolver` в `MockMvcBuilders`, jsonPath переписан с `$.length()` на `$.content.length()` + `$.totalElements`.
+
+**✅ warehouse-service — 3 endpoint'а закрыто 2026-05-13** (6 файлов: 2 repo + 2 service + 2 controller, + 2 test class):
+
+| Endpoint | Default sort |
+|---|---|
+| `GET /api/warehouses` (свои склады) | `name ASC` |
+| `GET /api/warehouses/organization/{orgId}` | `name ASC` |
+| `GET /api/racks/warehouse/{warehouseId}` | `name ASC` |
+
+**Не пагинированы намеренно:** `GET /api/racks/{rackId}/cells` (`getCellsByRack`) и `GET /api/racks/{rackId}/slots` (`getSlotsByRack`) — polymorphic response по `rack.kind` (4 разных entity-типа SHELF/CELL/FRIDGE/PALLET через 4 разных repository), типично ≤100 элементов на стеллаж, Page-friendly контракт смешанной коллекции потребовал бы либо общего интерфейса для всех 4 entity, либо отдельных endpoint'ов per-kind. Не оправдано на текущем этапе.
+
+**Тесты warehouse-service, поправленные под Page-контракт:**
+- `WarehouseControllerTest.java` — `getWarehousesByOrganization_ShouldReturnPageOfWarehouses` (мок на `getWarehousesByOrganization(eq(orgId), any(Pageable.class))` через `PageImpl<>`).
+- `WarehouseControllerIntegrationTest.java` — добавлен `PageableHandlerMethodArgumentResolver` в `MockMvcBuilders`, 3 теста переписаны на `$.content.length()` + `$.content[0].name` + `$.totalElements`.
+
+**⏳ Открыто (frontend, ~1 день):**
+- `SuppliesPage` — добавить `<TablePagination>`, локальный state `{page, rowsPerPage}`, сервис принимает `{page,size}`.
+- `ShipPage` — requests + history табы (потребитель `shipRequestService` + `productService.getOperationsHistory`).
+- `ReceivePage` history tab.
+- `AnalyticsPage` Operations tab.
+- `DocumentsPage` (новый — это §1.5 Frontend миграция, UI поверх уже-paginated `/api/document-registry`).
+- Сервисы фронта (`supplyService`, `shipRequestService`, `productService.getOperationsHistory`) — менять сигнатуру `list({page, size, sort})` по эталону `supplierService` с default `size=1000` для autocomplete-кейсов.
+
+Acceptance в `BACKEND_HP_BACKLOG.md §HP-2`.
 
 ---
 
@@ -265,11 +316,81 @@ k8s/{00..09}-*.yaml                                             — Kubernetes m
 
 Производные от решений в `QUESTIONS.md` (см. §0.1). Делаются **в связке с HP-1**, так как HP-1 без них работает «в воздух» (документы in-memory, нет номеров, нет flow PAUSED).
 
-### 1.5.A. MinIO + GeneratedDocument registry (Q1+Q2) — **P0**
+> **СТАТУС НА 2026-05-13.** Фундамент §1.5 P0 закрыт: §1.5.D ✅, §1.5.A (compose + entity + registry + endpoints) ✅, §1.5.A (stateless document-service) ✅, §1.5.B (status PAUSED + всегда-акт + 3 endpoint'а complete/discrepancy/approve) ✅. Compile + unit-tests зелёные на обоих сервисах. Что НЕ сделано в этом sprint'е: §1.5.C export flow (P1), §1.5.E inventory tooltip (P1, фронт), HP-1 generator'ы новых шаблонов, миграция фронта на `/api/document-registry`, RPA-канал документа `receipt-act` использует один шаблон (PDF) — выбор между `Акт приемки.RTF` (без расхождений) и `Акт расхождения.xls` (с расхождениями) сделаем в HP-1 при подключении POI-шаблонов.
+
+### Что появилось в коде (для контекста новых сессий)
+
+**Миграции product-service (Flyway):**
+- `V4__document_counters.sql` — таблица `document_counters (organization_id, document_type, year, counter)` для DocumentNumberService.
+- `V5__generated_documents.sql` — таблица `generated_documents` для registry.
+- `V6__operation_status.sql` — колонка `status` в `product_operation` (default `COMPLETED`, для существующих строк).
+
+DDL также прописан в `sql-scripts/productDB.sql` (для первого старта пустой БД через docker-compose).
+
+**Новые классы product-service:**
+- `model.entity.DocumentCounter` + `DocumentCounterId` (composite PK).
+- `model.entity.GeneratedDocument`.
+- `model.enums.OperationStatus { PENDING, RECEIVED, PAUSED, COMPLETED, CANCELLED }`.
+- `repository.DocumentCounterRepository` — `findForUpdate` с `@Lock(PESSIMISTIC_WRITE)`.
+- `repository.GeneratedDocumentRepository`.
+- `service.DocumentNumberService.next(orgId, type)` → `{ПРЕФИКС}-{YYYY}-{NNNNN}`. Префиксы: ПО, АП, ТТН, ТН, CMR, ИНВ, ПЕР, СПС, И, ЛП.
+- `service.DocumentRegistryService.register(opId, type, payload, orgId, userId) → GeneratedDocument`. Внутри: `DocumentClient.fetchPdf` → MinIO `putObject` → `repository.save`. Также есть `downloadBytes(...)` и `presignedUrl(...)`.
+- `controller.DocumentRegistryController` (префикс `/api/document-registry`):
+  - `GET /` — paginated список (фильтр по `?type=`).
+  - `GET /{id}` — метаданные.
+  - `GET /{id}/download` — PDF bytes (inline).
+  - `GET /{id}/url` — presigned URL (TTL по `minio.presigned-url-ttl-minutes`).
+  - `GET /by-operation/{operationId}` — все документы по операции.
+- `config.MinioConfig` — `MinioClient` bean, `@PostConstruct` создаёт bucket если его нет.
+- `dto.request.DiscrepancyRequest` + nested `DiscrepancyItem`.
+
+**Изменения в product-service существующих классов:**
+- `client.DocumentClient` — старые методы `generateReceiptOrder` / `generateWriteOffAct` / `generateRevaluationAct` (возвращали UUID) **удалены**. Остался один `fetchPdf(type, payload, orgId) → byte[]`.
+- `entity.ProductOperation` — добавлено поле `status: OperationStatus`. Default в `@PrePersist` = `COMPLETED` (backward-compat). `service.ProductOperationService.receiveProduct` явно ставит `PAUSED`.
+- `repository.ProductOperationRepository` — добавлен `findByOperationIdAndOrganizationId(...)`.
+- `controller.OperationController`:
+  - `receiveProduct` теперь регистрирует **два** документа (`receipt-order` + `receipt-act` с пустыми `discrepancies`), статус операции `PAUSED`, ответ содержит `receiptOrderId/Number` и `receiptActId/Number`.
+  - `revaluate` / `writeOff` мигрированы на `DocumentRegistryService.register`.
+  - Новые endpoint'ы:
+    - `POST /api/operations/{id}/complete` (WORKER) — `PAUSED → COMPLETED`.
+    - `POST /api/operations/{id}/discrepancy` (WORKER) — регистрирует акт о расхождении, статус остаётся `PAUSED`.
+    - `POST /api/operations/{id}/approve` (DIRECTOR) — `PAUSED → COMPLETED`.
+
+**docker-compose.yml:**
+- Сервис `minio` (ports 9000 API, 9001 console; creds `wmsadmin / wmsadmin12345`).
+- Сервис `minio-init` — на старте создаёт bucket `wms-documents` через `mc`.
+- Том `minio_data`.
+
+**application.properties (product-service):**
+```properties
+minio.endpoint=http://localhost:9000
+minio.access-key=wmsadmin
+minio.secret-key=wmsadmin12345
+minio.bucket=wms-documents
+minio.presigned-url-ttl-minutes=15
+```
+
+**build.gradle (product-service):** добавлена `implementation 'io.minio:minio:8.5.10'`.
+
+**document-service stateless:**
+- `DocumentService.records` (ConcurrentHashMap) **удалён**. Метод `generate(type, data, orgId, format)` возвращает `byte[]` напрямую.
+- `DocumentController` endpoints теперь возвращают `ResponseEntity<byte[]>` с `application/pdf` (или xls/docx по `?format=`).
+- Удалены endpoint'ы `GET /api/documents/{id}` (получение по UUID), `GET /api/documents/{id}/metadata`, `GET /api/documents` (paginated) — функционал переехал в product-service `/api/document-registry`.
+- Удалены endpoint'ы для `release-order`, `shipment-order`, `invoice-fact`, `discrepancy-act` (вычеркнуты ещё на этапе planning §0.1 Q1).
+- Удалены тесты `DocumentControllerTest`, `DocumentServiceTest`, `DocumentControllerIntegrationTest` (тестировали удалённый in-memory контракт). `PdfDocumentServiceParameterizedTest` оставлен — он тестирует PDF-генерацию напрямую, существующие методы `PdfDocumentService` пока на месте (будут почищены в HP-1).
+
+**Тесты, переписанные под новый контракт:**
+- `DocumentClientTest` — теперь тестирует `fetchPdf`.
+- `OperationControllerTest` — мок на `DocumentRegistryService`.
+- `ReceiveOperationContainerTest`, `WriteOffOperationContainerTest`, `ShipSagaFullContainerTest`, `ShipmentRequestContainerTest` — `@MockBean DocumentClient` → `@MockBean DocumentRegistryService`.
+
+### Детали (✅ сделано, ⏳ осталось)
+
+### 1.5.A. MinIO + GeneratedDocument registry (Q1+Q2) — ✅ DONE (2026-05-13)
 
 **Что:**
 1. **MinIO** в `docker-compose.yml`: сервис `minio/minio` с томом, портами 9000 (API) и 9001 (console). Bucket `wms-documents`. Креды через env.
-2. **`product_db` → таблица `generated_documents`** (DDL в `sql-scripts/productDB.sql` + Flyway `V3__generated_documents.sql`):
+2. **`product_db` → таблица `generated_documents`** (DDL в `sql-scripts/productDB.sql` + Flyway `V5__generated_documents.sql`):
    ```sql
    CREATE TABLE generated_documents (
        id UUID PRIMARY KEY,
@@ -310,19 +431,19 @@ implementation 'io.minio:minio:8.5.10'
 
 **Оценка: 2-2.5 дня** (compose + миграция + entity/service + 3 endpoint'а + 1 страница фронта).
 
-### 1.5.B. Receive workflow: статус PAUSED + всегда-акт приёмки (Q1+Q3) — **P0**
+### 1.5.B. Receive workflow: статус PAUSED + всегда-акт приёмки (Q1+Q3) — ✅ DONE (2026-05-13)
 
 **Что:**
-1. **ProductOperation** — добавить enum `OperationStatus { PENDING, RECEIVED, PAUSED, COMPLETED }`. Колонка `status` в `product_operation_events` + read-model. Миграция Flyway `V4__operation_status.sql`.
+1. **ProductOperation** — добавить enum `OperationStatus { PENDING, RECEIVED, PAUSED, COMPLETED }`. Колонка `status` в `product_operation_events` + read-model. Миграция Flyway `V6__operation_status.sql`.
 2. **OperationController.receiveProduct** — после `receiveProduct()`:
    - Создать `ReceiveSagaState` (уже есть).
    - **Всегда** генерить `receipt-act` через `DocumentRegistryService.register("receipt-act", payload, ...)` с пустым `discrepancies: []` → шаблон `Акт приемки.RTF`.
    - Также генерить `receipt-order` (как сейчас).
    - Установить `OperationStatus.PAUSED` — операция ждёт «продолжить» (WORKER подтверждает приёмку) или «зафиксировать расхождение» (WORKER заполняет форму расхождений).
-3. **Новые endpoint'ы**:
+3. **Endpoint'ы** (WORKER, кладовщик = МОЛ, директорское утверждение снято 2026-05-13 — кладовщик материально-ответственное лицо и подписывает акт сам):
    - `POST /api/operations/{id}/complete` (WORKER) — статус `PAUSED → COMPLETED`.
-   - `POST /api/operations/{id}/discrepancy` (WORKER) — принимает `List<DiscrepancyItem> discrepancies` (productId, expectedQty, actualQty, defectDescription). **Перегенерирует** `receipt-act` с шаблоном `Акт расхождения.xls`, новый документ в MinIO + БД. Статус остаётся `PAUSED` (ждёт решения руководителя).
-   - `POST /api/operations/{id}/approve` (DIRECTOR) — утверждение акта расхождения, статус `PAUSED → COMPLETED`.
+   - `POST /api/operations/{id}/discrepancy` (WORKER) — принимает `List<DiscrepancyItem> discrepancies` (productId, expectedQty, actualQty, defectDescription). **Перегенерирует** `receipt-act` с шаблоном `Акт расхождения.xls`, новый документ в MinIO + БД, **сразу `PAUSED → COMPLETED`**.
+   - ~~`POST /api/operations/{id}/approve`~~ — удалён (мёртвый код, не нужен).
 4. **Frontend ReceivePage**:
    - После приёмки на странице операции — два больших action-button'а: «Принять без замечаний» / «Зафиксировать расхождение».
    - Форма расхождений: для каждого товара — фактическое количество + описание дефекта.
@@ -332,10 +453,10 @@ implementation 'io.minio:minio:8.5.10'
 
 **Оценка: 2-3 дня** (статус + 3 endpoint'а + миграция + 2 формы фронта).
 
-### 1.5.C. Export flow: чекбокс + ТН/ТТН/CMR пакет (Q4) — **P1**
+### 1.5.C. Export flow: чекбокс + ТН/ТТН/CMR пакет (Q4) — ✅ DONE (2026-05-13)
 
 **Что:**
-1. **ShipmentRequest** — добавить `shipmentType: ShipmentType { DOMESTIC, EXPORT }` + `currency: String` (ISO 4217 — BYN/USD/EUR/RUB; default `BYN`). Миграция `V5__shipment_export.sql`.
+1. **ShipmentRequest** — добавить `shipmentType: ShipmentType { DOMESTIC, EXPORT }` + `currency: String` (ISO 4217 — BYN/USD/EUR/RUB; default `BYN`). Миграция `V7__shipment_export.sql` (V4-V6 уже заняты, см. §1.5 «Что появилось в коде»).
 2. **ShipPage**:
    - Чекбокс **«На экспорт»**. По умолчанию выключен.
    - **Выключен** (внутренняя отгрузка): radio «ТН / ТТН» + radio «горизонтальная / вертикальная». При submit генерируется один документ.
@@ -348,10 +469,40 @@ implementation 'io.minio:minio:8.5.10'
 
 **Оценка: 2-3 дня** (миграции + DTO + saga правки + 1 страница фронта расширение).
 
-### 1.5.D. DocumentNumberService (Q7) — **P0** (нужен для 1.5.A)
+**Что закрыто 2026-05-13 (backend):**
+- Миграция `V7__shipment_export.sql` + DDL в `sql-scripts/productDB.sql`: 6 колонок (`shipment_type`, `currency`, `document_layout`, `domestic_document_kind`, `recipient_country`, `recipient_gln`).
+- Enums: `ShipmentType { DOMESTIC, EXPORT }`, `DocumentLayout { HORIZONTAL, VERTICAL }`, `DomesticDocumentKind { TN, TTN }`.
+- `ShipmentRequest` entity — 6 новых полей + дефолты в `@PrePersist`.
+- `CreateShipmentRequestRequest` + `ShipmentRequestResponse` records — расширены (включая `documentIds: List<UUID>` в response для свежего complete-ответа).
+- `ShipSagaState.documentId: UUID` → `documentIds: List<UUID>` + helper `addDocumentId(...)`.
+- `SagaOrchestrator.markShipStepCompleted` — switch `DOCUMENT_GENERATION` теперь принимает и legacy `documentId`, и новый `documentIds: List<UUID>` через `extractDocumentIds(...)` (backward-compat для тестов).
+- `SagaOrchestrator.compensateShipSaga` — реально удаляет все документы из MinIO + `generated_documents` через `documentRegistryService.deleteDocument(...)` (optional autowire — если bean не доступен, log.warn).
+- `DocumentRegistryService.deleteDocument(documentId, organizationId)` — новый метод: `RemoveObjectArgs` в MinIO + `repository.delete(...)`. Идемпотентно.
+- `ShipmentRequestService.create(...)` — пробрасывает 6 новых полей + валидация «EXPORT с BYN запрещено».
+- `ShipmentRequestService.complete(requestId, userId, organizationId)` — после inventory/operations вызывает `generateShipmentDocuments(...)`:
+  - `DOMESTIC` + `TN` → `transport-note`; `DOMESTIC` + `TTN` → `waybill`; layout (HORIZONTAL/VERTICAL) уходит в payload `layout`.
+  - `EXPORT` → пакет `transport-note` + `cmr` + `invoice` (все три привязаны к первой `operationId` отгрузки, currency в payload).
+- `ShipmentRequestController.complete` — больше не принимает `body.documentTypes`, берёт `X-User-Id` + `X-Organization-Id` из headers.
+- Тесты: `ShipmentRequestServiceTest` (+ `@Mock DocumentRegistryService` + 6 null-параметров в DTO), `ShipmentRequestContainerTest`, `ShipSagaFullContainerTest` — поправлены под новый constructor `CreateShipmentRequestRequest`. `:product-service:test` зелёный.
+
+**Что закрыто 2026-05-13 (frontend):**
+- `client/src/validation/schemas.js` — `shipRequestSchema` расширена: `shipmentType` (DOMESTIC/EXPORT, default DOMESTIC), `currency` (ISO 4217, **conditional** через `yup.when` — EXPORT запрещает BYN), `documentLayout` (HORIZONTAL/VERTICAL, default HORIZONTAL), `domesticDocumentKind` (TN/TTN, default TN), `recipientCountry`, `recipientGln`.
+- `client/src/pages/ShipPage.js` `CreateRequestDialog`:
+  - `defaultValues` + `reset(...)` — 6 новых полей.
+  - Шаг 1 «Получатель и документы»: после комментария — divider «Документы отгрузки», чекбокс «На экспорт» (Controller, при переключении сбрасывает `currency` через `reset({...getValues(), shipmentType, currency})` чтобы yup не блокировал).
+  - **DOMESTIC** (чекбокс выключен): два радио-блока — `domesticDocumentKind` (ТН/ТТН) + `documentLayout` (горизонтальная/вертикальная).
+  - **EXPORT** (чекбокс включён): dropdown валюта (`EXPORT_CURRENCIES = [USD, EUR, RUB, CNY]`) + `recipientCountry` + `recipientGln`.
+  - Шаг 3 «Подтверждение» — добавлено summary: «Тип отгрузки», «Документы» (ТТН/ТН+ориентация или «ТН + CMR + инвойс»), «Получатель (экспорт)» с GLN.
+  - `onSubmit` пробрасывает 6 новых полей в `shipRequestService.create(...)`. DOMESTIC-поля nullable при EXPORT, и наоборот.
+  - `steps[0].fields` расширен — RHF проверяет все новые поля перед переходом на шаг 2.
+- `client/src/services/shipRequestService.js` — `complete(requestId)` без параметра `body` (раньше принимал `body.documentTypes`).
+- `client/src/pages/ShipPage.js handleComplete` — снят `{}`-параметр в вызове `complete()`.
+- `npm run build` (DISABLE_ESLINT_PLUGIN=true) — **Compiled successfully**. Только pre-existing warnings про неиспользуемый `React`-импорт.
+
+### 1.5.D. DocumentNumberService (Q7) — ✅ DONE (2026-05-13)
 
 **Что:**
-1. **`product_db` → таблица `document_counters`** (Flyway `V6__document_counters.sql`):
+1. **`product_db` → таблица `document_counters`** (Flyway `V4__document_counters.sql`):
    ```sql
    CREATE TABLE document_counters (
        organization_id UUID NOT NULL,
@@ -370,9 +521,9 @@ implementation 'io.minio:minio:8.5.10'
 
 **Оценка: 0.5 дня.**
 
-### 1.5.E. Frontend мелочи (Q6) — **P1**
+### 1.5.E. Frontend мелочи (Q6) — ✅ DONE (2026-05-13)
 
-- **Q6**: tooltip на кнопке «Создать инвентаризацию» в `InventoryCheckPage`: «По НСБУ N 126 — не ранее 30 сентября для активов, не ранее 30 ноября для денежных средств; обязательна перед годовой отчётностью, при реорганизации, смене МОЛ, факте хищения». MUI `<Tooltip>`. **Оценка: 30 минут.**
+- **Q6**: ✅ Tooltip на кнопке «Начать сессию» в `InventoryPage.js`: «По НСБУ № 126 — не ранее 30 сентября для активов, не ранее 30 ноября для денежных средств; обязательна перед годовой отчётностью, при реорганизации, смене МОЛ, факте хищения». MUI `<Tooltip arrow placement="bottom">`. `EmptyState` теперь без `actionLabel/onAction` — кнопка вынесена в отдельный `Box` ниже, обёрнута в Tooltip.
 
 ### 1.5.F. Что НЕ делаем (зафиксировано)
 
@@ -407,18 +558,22 @@ implementation 'io.minio:minio:8.5.10'
 
 ### 2.0 Сводная картина — 2 канала RPA
 
-| # | Канал | Тип | Где живёт | Когда применять | Приоритет |
+| # | Канал | Тип | Где живёт | Что делает | Приоритет |
 |---|---|---|---|---|---|
-| **RPA-1** | **Локальный 1С → extractor** | Desktop integration | `product-service/rpa/` | Чтение плановых поставок из 1С. Два варианта реализации: (A) **OData REST** к 1С 8.3+ — server-side API, чистый JSON; (B) **WinAppDriver/Appium** для толстого клиента 1С — UI-бот кликает по окнам, если OData недоступен. | **P0** |
-| **RPA-2** | **Локальный Office → filler** | Desktop UI bot | `document-service/rpa/OfficeDocumentBot` | Бот реально открывает MS Word / Excel локально, заполняет шаблон из `documents template/`, сохраняет PDF/XLSX/DOCX. Демонстрирует «настоящий RPA» на защите. WinAppDriver/Appium (рекомендуемый — общий стек с RPA-1 вариант B) или JACOB (COM bridge, резерв). | **P0** (для защиты) |
+| **RPA-1** | **1С → read-only парсинг** | Desktop UI bot | `product-service/rpa/OneCWinAppExtractorImpl` | У используемой инсталляции 1С **нет открытого API** (нет OData / HTTP-сервисов). Бот через WinAppDriver запускает 1С толстый клиент, логинится read-only пользователем, открывает журнал «Поступление товаров и услуг», **парсит таблицу** строки за строкой, маппит в `PlannedDelivery`, закрывает 1С. Никаких записей/проведений документов. | **P0** |
+| **RPA-2** | **Office → заполнение шаблона** | Desktop UI bot | `document-service/rpa/OfficeDocumentBot` | Бот реально открывает MS Word / Excel локально, заполняет шаблон из `documents template/`, сохраняет PDF/XLSX/DOCX. Демонстрирует «настоящий RPA» на защите. WinAppDriver/Appium (рекомендуемый — общий стек с RPA-1) или JACOB (COM bridge, резерв). | **P0** (для защиты) |
 
 Existing Apache POI + PDFBox (server-side генерация документов, `DocumentRpaService` / `PdfDocumentService`) — **primary** способ генерации. RPA-2 (`OfficeDocumentBot`) — это RPA-демо поверх, не замена POI.
 
-Существующие `RpaHtmlExtractorImpl` (Jsoup) и `ApiExtractorImpl` (REST к mock-erp) — **dev-fallback'и** для разработки без реального 1С, в production-режиме (RPA-1) не используются. MockErpController остаётся для локального тестирования.
+Существующие `RpaHtmlExtractorImpl` (Jsoup) и `ApiExtractorImpl` (REST к mock-erp) — **dev-fallback'и** для разработки без реального доступа к 1С, в production-режиме (RPA-1) не используются. MockErpController остаётся для локального тестирования.
 
-WinAppDriver/Appium стек переиспользуется в RPA-1 (вариант B) и RPA-2 — один driver-процесс, общая зависимость `io.appium:java-client`.
+WinAppDriver/Appium стек переиспользуется в RPA-1 и RPA-2 — один driver-процесс, общая зависимость `io.appium:java-client`. **OData/HTTP-сервисы 1С не рассматриваются** — пользователь зафиксировал что в его инсталляции их нет.
 
-### 2.1 Текущая архитектура RPA (что есть)
+### 2.1 Текущее состояние (dev-fallback)
+
+Существующие классы остаются как fallback для разработки без реального 1С. В production-режиме (RPA-1) переключаемся на `OneCWinAppExtractorImpl` через `erp.extraction.mode=onec`.
+
+
 
 ```
 product-service/src/main/java/by/bsuir/productservice/rpa/
@@ -441,235 +596,7 @@ product-service/src/main/java/by/bsuir/productservice/rpa/
 4. Логирует в `extraction_log` (success/failure, найдено/новых).
 5. Публикует RabbitMQ-событие `product.planned_delivery_received` для downstream.
 
-### 2.2 Канал A — OData REST к 1С: варианты подключения
-
-1С платформа предоставляет несколько способов экспонировать данные наружу:
-
-| Канал | Версия 1С | Сложность | Когда использовать |
-|---|---|---|---|
-| **OData REST API** | 8.3+ (стандарт) | низкая ⭐ | Современные конфигурации, читать справочники и регистры. Авторизация Basic. **Рекомендуется по умолчанию.** |
-| **HTTP-сервисы** | 8.3+ (требует разработки в 1С) | средняя | Когда OData недоступен или нужна сложная фильтрация / агрегация. Создаётся программистом 1С. |
-| **Web-сервисы (SOAP)** | старые версии | средняя | Legacy-системы. Не рекомендуется для нового интеграционного слоя. |
-| **COM-коннектор** | Windows только | высокая | Embedded интеграция. Java через JCo / IKVM — рискованно. **Не использовать.** |
-| **CSV/XLSX exchange через shared folder** | любая | низкая | Batch sync. Подходит для редкого обмена. Не real-time. |
-| **Очередь сообщений (Kafka/Rabbit)** | 8.3+ через 1С-Кластер интеграции | высокая | Большие потоки, low-latency. Overkill для WMS-приёмки. |
-
-**Рекомендованный путь — OData**:
-- Стандартный из коробки, без программирования на стороне 1С.
-- Запрос вида: `GET http://1c-server/MyDB/odata/standard.odata/Catalog_ПлановыеПоставки?$format=json&$filter=Active%20eq%20true`
-- Auth: HTTP Basic (логин/пароль пользователя 1С с правом доступа).
-
-### 2.3 План реализации `OneCApiExtractorImpl` (канал A)
-
-1. **Завести нового extractor** `@Component("oneCExtractor")` в `product-service/src/main/java/by/bsuir/productservice/rpa/OneCApiExtractorImpl.java`:
-   ```java
-   @Component("oneCExtractor")
-   public class OneCApiExtractorImpl implements PlannedDeliveryExtractor {
-       @Value("${erp.onec.base-url}") private String baseUrl;       // http://1c-server/MyDB/odata/standard.odata
-       @Value("${erp.onec.entity}")   private String entity;        // Document_ПриходТовара
-       @Value("${erp.onec.username}") private String username;
-       @Value("${erp.onec.password}") private String password;
-       @Value("${erp.onec.filter:}")  private String filter;        // OData $filter
-
-       private final RestClient client = RestClient.builder()
-               .baseUrl(baseUrl)
-               .defaultHeader(HttpHeaders.AUTHORIZATION, "Basic " + Base64.encode(username + ":" + password))
-               .build();
-
-       @Override public String getSourceName() { return "1C"; }
-       @Override public List<Map<String,Object>> extractDeliveries() {
-           Map response = client.get()
-               .uri(uriBuilder -> uriBuilder.path("/" + entity)
-                   .queryParam("$format", "json")
-                   .queryParamIfPresent("$filter", Optional.ofNullable(filter).filter(s -> !s.isBlank()))
-                   .build())
-               .retrieve()
-               .body(Map.class);
-           return mapOneCResponse(response);
-       }
-
-       private List<Map<String,Object>> mapOneCResponse(Map oneCJson) {
-           // oneCJson.get("value") = List<Map> с 1С-нативными именами полей:
-           // Ref_Key (UUID 1С), Дата, Контрагент_Key, Номенклатура_Key, Количество, ...
-           // Маппим в наш формат: externalId, supplierName, productName, expectedQuantity, expectedDate
-       }
-   }
-   ```
-
-2. **Обновить `ErpExtractorJob`** — добавить новый mode `onec` рядом с `rpa`/`api`:
-   ```java
-   @Qualifier("oneCExtractor") private final PlannedDeliveryExtractor oneCExtractor;
-   ...
-   PlannedDeliveryExtractor extractor = switch (mode) {
-       case "onec" -> oneCExtractor;
-       case "api"  -> apiExtractor;
-       default     -> rpaExtractor;
-   };
-   ```
-
-3. **Конфиги в `application.properties` каждого env:**
-   ```properties
-   erp.extraction.mode=onec
-   erp.onec.base-url=http://1c-server/MyDB/odata/standard.odata
-   erp.onec.entity=Document_ПриходТоваров
-   erp.onec.username=integration_user
-   erp.onec.password=${ONEC_PASSWORD}
-   erp.onec.filter=Posted eq true and Date ge datetime'2026-01-01T00:00:00'
-   ```
-
-4. **Тип `expectedQuantity`** — сейчас `Integer` в `PlannedDelivery.expectedQuantity`. 1С обычно отдаёт `Количество` как `BigDecimal` (дробное, например 12.500 кг). **Поменять тип на `BigDecimal`** в:
-   - `PlannedDelivery` entity (+ миграция `V3__planned_delivery_qty_bigdecimal.sql`).
-   - `ErpExtractorJob` parser.
-   - Frontend `ErpExtractorPage` если показывает.
-
-5. **Маппинг 1С-полей** — нужна таблица соответствий, согласованная с заказчиком 1С:
-   | 1С (typical) | Наше поле |
-   |---|---|
-   | `Ref_Key` | `externalId` (UUID 1С → строка) |
-   | `Контрагент/Description` (через `$expand`) | `supplierName` |
-   | `Товары[].Номенклатура/Description` | `productName` (берём первую строку или агрегируем) |
-   | `Товары[].Количество` | `expectedQuantity` |
-   | `Дата` | `expectedDate` |
-   | `Поставка_Key` (внешняя ссылка) | `supplyId` для downstream |
-
-6. **Тестирование без 1С**:
-   - **Unit-тест** `OneCApiExtractorImplTest` — мокать `RestClient`, кормить заранее заготовленным OData-JSON ответом, проверять маппинг.
-   - **WireMock или MockRestServiceServer** для интеграционного теста — поднимать имитацию OData endpoint'а.
-   - **Live-тест** — отдельный профиль `onec-live`, запускается вручную в среде разработчика, требует доступа к 1С.
-
-7. **Безопасность**:
-   - **Пароль НЕ коммитить** в репо. `application.properties` берёт из `${ONEC_PASSWORD}` env var.
-   - **Read-only пользователь 1С** — права только на чтение нужных регистров.
-   - **HTTPS** для production-канала (1С может быть за nginx-reverse-proxy).
-
-8. **MockErpController** — оставить в document-service для demo-режима (`erp.extraction.mode=rpa`). Полезен для защиты дипломной — не требует доступа к реальной 1С.
-
-### 2.4 Acceptance канала A
-
-- Конфиг `erp.extraction.mode=onec` подключает `OneCApiExtractorImpl`.
-- Manual run через `POST /api/erp-extractor/run?mode=onec` возвращает `{success: true, found: N, new: M}`.
-- Cron-задача в 03:00 автоматически опрашивает 1С (если включена).
-- `extraction_log` корректно отражает успешные и сбойные запросы.
-- Unit-тесты на маппинг 1С-JSON → `PlannedDelivery`.
-
-### 2.5 Оценка канала A
-
-- **MVP (один тип документа — приходные накладные):** 1-1.5 дня (extractor + конфиг + unit-тесты).
-- **Полная (несколько типов + edge-cases):** 2-3 дня.
-- **Совместная отладка с заказчиком 1С (DBA настраивает OData, выдаёт пользователя):** + 0.5-1 день на калибровку.
-
-**Зависимости:** доступ к тестовой 1С с включённой OData-публикацией. Без неё можно довести до unit-тестов на mocked OData-JSON.
-
-### 2.6 Канал B — `SeleniumErpExtractorImpl` (web UI bot)
-
-**Цель.** Бот реально открывает Chromium, логинится в web-интерфейсе ERP (или mock-erp), парсит таблицу плановых поставок. **На защите запускается с `--headless=false` — комиссия видит как бот сам кликает.** Скриншоты после каждого шага складываются в `logs/rpa-screenshots/` как артефакт для пояснительной записки.
-
-**Зависимости** (`product-service/build.gradle`):
-```groovy
-implementation 'org.seleniumhq.selenium:selenium-java:4.27.0'
-implementation 'io.github.bonigarcia:webdrivermanager:5.9.2'  // auto-download chromedriver
-```
-
-**Расположение:** `product-service/src/main/java/by/bsuir/productservice/rpa/SeleniumErpExtractorImpl.java`
-
-**Реализация:**
-```java
-@Component("seleniumExtractor")
-@Slf4j @RequiredArgsConstructor
-public class SeleniumErpExtractorImpl implements PlannedDeliveryExtractor {
-
-    @Value("${erp.selenium.base-url:http://localhost:8040/mock-erp}") private String baseUrl;
-    @Value("${erp.selenium.username:admin}")  private String username;
-    @Value("${erp.selenium.password:admin}")  private String password;
-    @Value("${erp.selenium.headless:true}")   private boolean headless;
-    @Value("${erp.selenium.screenshots-dir:logs/rpa-screenshots}") private String screenshotsDir;
-
-    @Override public String getSourceName() { return "SELENIUM"; }
-
-    @Override public List<Map<String,Object>> extractDeliveries() {
-        WebDriverManager.chromedriver().setup();
-        ChromeOptions opts = new ChromeOptions();
-        if (headless) opts.addArguments("--headless=new", "--disable-gpu");
-        opts.addArguments("--no-sandbox", "--window-size=1280,800");
-
-        WebDriver driver = new ChromeDriver(opts);
-        try {
-            driver.get(baseUrl + "/login");
-            driver.findElement(By.name("username")).sendKeys(username);
-            driver.findElement(By.name("password")).sendKeys(password);
-            screenshot(driver, "1-login-filled");
-            driver.findElement(By.cssSelector("button[type=submit]")).click();
-
-            driver.get(baseUrl + "/deliveries");
-            WebElement table = new WebDriverWait(driver, Duration.ofSeconds(10))
-                .until(d -> d.findElement(By.id("deliveries-table")));
-            screenshot(driver, "2-deliveries-loaded");
-
-            return parseTable(table);
-        } finally {
-            driver.quit();
-        }
-    }
-
-    private List<Map<String,Object>> parseTable(WebElement table) {
-        List<Map<String,Object>> result = new ArrayList<>();
-        for (WebElement row : table.findElements(By.cssSelector("tbody tr"))) {
-            List<WebElement> cells = row.findElements(By.tagName("td"));
-            if (cells.size() < 5) continue;
-            Map<String,Object> d = new HashMap<>();
-            d.put("externalId", cells.get(0).getText().trim());
-            d.put("supplierName", cells.get(1).getText().trim());
-            d.put("productName", cells.get(2).getText().trim());
-            d.put("expectedQuantity", cells.get(3).getText().trim());
-            d.put("expectedDate", cells.get(4).getText().trim());
-            result.add(d);
-        }
-        return result;
-    }
-
-    private void screenshot(WebDriver driver, String name) {
-        try {
-            File src = ((TakesScreenshot) driver).getScreenshotAs(OutputType.FILE);
-            Path target = Paths.get(screenshotsDir, name + "-" + System.currentTimeMillis() + ".png");
-            Files.createDirectories(target.getParent());
-            Files.copy(src.toPath(), target);
-            log.info("Screenshot: {}", target);
-        } catch (Exception e) { log.warn("Screenshot failed: {}", e.getMessage()); }
-    }
-}
-```
-
-**Обновить `ErpExtractorJob`:**
-```java
-@Qualifier("seleniumExtractor") private final PlannedDeliveryExtractor seleniumExtractor;
-...
-PlannedDeliveryExtractor extractor = switch (mode) {
-    case "onec"     -> oneCExtractor;
-    case "selenium" -> seleniumExtractor;
-    case "api"      -> apiExtractor;
-    default         -> rpaExtractor;   // Jsoup
-};
-```
-
-**Конфиги:**
-```properties
-erp.extraction.mode=selenium
-erp.selenium.base-url=http://localhost:8040/mock-erp
-erp.selenium.username=admin
-erp.selenium.password=admin
-erp.selenium.headless=true
-erp.selenium.screenshots-dir=logs/rpa-screenshots
-```
-
-**Полировка `MockErpController` (document-service):** убедиться что login-страница имеет полноценную HTML-форму с `<input name="username">`, `<input name="password">`, `<button type="submit">`. Текущий `RpaHtmlExtractorImpl` (Jsoup) работает с этой формой через POST form-encoded — Selenium тоже сработает.
-
-**Тесты:**
-- Unit: `SeleniumErpExtractorImplTest` с мокированным `WebDriver` (Mockito).
-- Integration: `*ContainerTest` с `BrowserWebDriverContainer` (testcontainers-java module) — поднимает Chrome в контейнере вместе с приложением. Это потяжелее, но даёт настоящий e2e.
-
-**Оценка:** 0.5-1 день.
-
-### 2.7 Канал C — `OfficeDocumentBot` (локальная автоматизация MS Word / MS Excel)
+### 2.2 RPA-2 — `OfficeDocumentBot` (локальная автоматизация MS Word / MS Excel)
 
 **Цель.** Бот реально открывает **MS Word или MS Excel** на машине, открывает шаблон из `documents template/`, заполняет placeholder'ы / ячейки данными из WMS, сохраняет результат как `.docx`/`.xlsx`/`.pdf`. На защите — запускаем не-headless, комиссия видит как Word/Excel открывается, бот печатает в поля, сохраняет файл. **Это и есть «настоящий RPA»** (UI Automation на desktop), в отличие от Apache POI (server-side library).
 
@@ -677,10 +604,10 @@ erp.selenium.screenshots-dir=logs/rpa-screenshots
 
 | Движок | Что делает | Плюсы | Минусы |
 |---|---|---|---|
-| **WinAppDriver (Appium)** | UI Automation API Windows: ищет элементы по `AccessibilityId`/`Name`, кликает, печатает | Тот же стек что канал D (1С) — один driver, общие зависимости `io.appium:java-client` + WinAppDriver.exe. Универсально работает с любым Win-app. | Чуть хрупче на формулах Excel (нужно ждать пересчёта); ребро по селекторам в Office Ribbon. |
+| **WinAppDriver (Appium)** | UI Automation API Windows: ищет элементы по `AccessibilityId`/`Name`, кликает, печатает | Тот же стек что RPA-1 (1С толстый) — один driver, общие зависимости `io.appium:java-client` + WinAppDriver.exe. Универсально работает с любым Win-app. | Чуть хрупче на формулах Excel (нужно ждать пересчёта); ребро по селекторам в Office Ribbon. |
 | **JACOB (Java COM Bridge)** | Драйвит `Word.Application` / `Excel.Application` через COM | Чистый COM API: `app.Workbooks.Open`, `sheet.Cells(row,col).Value = "..."`. Стабильно, не зависит от UI-разметки. | Только Windows + MS Office установлен. Native DLL `jacob-x64.dll` нужно положить в PATH. |
 
-**Рекомендованный путь — WinAppDriver** для консистентности с каналом D (один стек на оба desktop-канала). JACOB — резерв для случаев когда Excel-formulas нестабильно отрабатывают через UI Automation.
+**Рекомендованный путь — WinAppDriver** для консистентности с RPA-1 (один стек на оба desktop-канала). JACOB — резерв для случаев когда Excel-formulas нестабильно отрабатывают через UI Automation.
 
 **Расположение:** `document-service/src/main/java/by/bsuir/documentservice/rpa/OfficeDocumentBot.java`
 
@@ -696,7 +623,7 @@ implementation 'com.hynnet:jacob:1.18'   // или net.sf.jacob-project:jacob
 
 **Среда (одноразово):**
 1. **Windows 10+** с **MS Word + MS Excel** установленным (часть Office 365 или 2019+).
-2. WinAppDriver запущен как сервис (`http://127.0.0.1:4723`) — тот же что для канала D.
+2. WinAppDriver запущен как сервис (`http://127.0.0.1:4723`) — тот же что для RPA-1 варианта B.
 3. Для JACOB: положить `jacob-1.20-x64.dll` в `java.library.path` (либо в `<JDK>/bin`).
 
 **Сценарий бота (на примере приходного ордера):**
@@ -795,7 +722,7 @@ rpa.office.excel-exe=C:\\Program Files\\Microsoft Office\\root\\Office16\\EXCEL.
 **Acceptance:**
 - Endpoint `POST /api/documents/office/fill` с входным `templatePath` + `placeholders` возвращает PDF.
 - На защите запуск с `rpa.office.headless=false` — комиссия видит как Excel/Word открывается, бот заполняет, сохраняет.
-- Reuse: тот же endpoint покрывает все 12 типов документов через выбор `templatePath`.
+- Reuse: тот же endpoint покрывает все 10 типов документов через выбор `templatePath`.
 
 **Оценка:** 1-1.5 дня (WinAppDriver + калибровка селекторов Excel/Word). +0.5 дня резервный JACOB-путь.
 
@@ -803,24 +730,27 @@ rpa.office.excel-exe=C:\\Program Files\\Microsoft Office\\root\\Office16\\EXCEL.
 - Office Ribbon/Save-as-PDF UI отличается между 2019/2021/365 — селекторы могут потребовать подстройки на машине защиты.
 - На headless-CI работать не будет (нужен реальный Windows Desktop). Это RPA-демо для защиты, не auto-prod-канал.
 
-### 2.8 Канал D — `WinAppDocumentBot` (Appium + WinAppDriver, для 1С толстого клиента)
+### 2.3 RPA-1 — `OneCWinAppExtractorImpl` (read-only парсинг 1С через WinAppDriver)
 
-**Цель.** Бот автоматизирует **толстый клиент 1С (1cv8.exe)** через UI Automation API Windows. Кликает по окнам, заполняет поля документа «Приход товара», нажимает «Провести». **Доступ к 1С будет завтра — реализация откладывается.**
+**Цель.** Бот **только читает** данные из толстого клиента 1С (1cv8.exe). У используемой инсталляции 1С **нет открытого API** (нет OData-публикации, нет HTTP-сервисов) — единственный путь извлечь плановые поставки = UI-автоматизация поверх UI Automation API Windows. Никаких записей/проведений документов **не делаем**: только открыть нужный справочник/журнал, прочитать таблицу, выйти. Доступ к 1С — ожидаем.
+
+**Что именно бот делает:**
+1. Запускает `1cv8.exe`/`1cestart.exe` через WinAppDriver.
+2. Логинится в выданную тестовую информационную базу (выданный пользователь с **read-only** правами).
+3. Идёт в нужный журнал — обычно `Документы → Поступление товаров и услуг` (точное название зависит от конфигурации 1С пользователя).
+4. Открывает список документов, итерирует строки видимой таблицы: дата, контрагент, номенклатура, количество, статус (проведён / не проведён).
+5. Маппит каждую строку в `PlannedDelivery` (externalId = номер документа 1С, supplierName = контрагент, productName = номенклатура, expectedQuantity, expectedDate).
+6. Закрывает 1С.
+7. Возвращает `List<Map<String,Object>>` — тот же контракт что `PlannedDeliveryExtractor.extractDeliveries()`.
 
 **Технический стек:**
 - **WinAppDriver** ([https://github.com/microsoft/WinAppDriver](https://github.com/microsoft/WinAppDriver)) — официальный Microsoft, 4 МБ exe. Слушает на порту 4723. Реализует WebDriver-протокол для Windows-приложений.
 - **Appium Java client** (`io.appium:java-client:9.x`) — Java SDK для WebDriver.
-- **Selenium-core** уже будет в product-service для канала B — Appium его реиспользует.
+- **Selenium-core** транзитивно подтягивается с Appium (общий WebDriver-протокол).
 
-**Требования к среде:**
-1. **Windows 10+** с включённым **Developer Mode** (`Settings → Privacy & Security → For developers → Developer Mode: On`).
-2. Установить WinAppDriver: `WindowsApplicationDriver.msi` от Microsoft.
-3. Запустить WinAppDriver как сервис: `C:\Program Files (x86)\Windows Application Driver\WinAppDriver.exe`.
-4. Для нахождения селекторов — **Accessibility Insights for Windows** (от Microsoft, бесплатно) или WinSpy.
+**Расположение:** `product-service/src/main/java/by/bsuir/productservice/rpa/OneCWinAppExtractorImpl.java`
 
-**Расположение:** `document-service/src/main/java/by/bsuir/documentservice/rpa/WinAppDocumentBot.java`
-
-**Зависимости** (`document-service/build.gradle`):
+**Зависимости** (`product-service/build.gradle`):
 ```groovy
 implementation 'io.appium:java-client:9.3.0'
 implementation 'org.seleniumhq.selenium:selenium-java:4.27.0'
@@ -828,48 +758,55 @@ implementation 'org.seleniumhq.selenium:selenium-java:4.27.0'
 
 **Скетч:**
 ```java
-@Component @Slf4j
-public class WinAppDocumentBot {
+@Component("oneCExtractor")
+@Slf4j @RequiredArgsConstructor
+public class OneCWinAppExtractorImpl implements PlannedDeliveryExtractor {
 
-    @Value("${rpa.winapp.driver-url:http://127.0.0.1:4723}") private String driverUrl;
-    @Value("${rpa.winapp.onec-path}") private String oneCPath;  // C:\\Program Files\\1cv8\\common\\1cestart.exe
-    @Value("${rpa.winapp.onec-base}") private String oneCBase;  // путь к информационной базе
+    @Value("${rpa.onec.driver-url:http://127.0.0.1:4723}") private String driverUrl;
+    @Value("${rpa.onec.executable}") private String oneCExe;        // C:\\Program Files\\1cv8\\common\\1cestart.exe
+    @Value("${rpa.onec.base-connection}") private String baseConn;  // "/IBConnectionString Srvr=...;Ref=..." или путь к файловой базе
+    @Value("${rpa.onec.username}") private String username;
+    @Value("${rpa.onec.password}") private String password;
+    @Value("${rpa.onec.journal-name:Поступление товаров и услуг}") private String journalName;
 
-    public void createReceiptDocument(Map<String,Object> data) throws Exception {
+    @Override public String getSourceName() { return "1C-RPA"; }
+
+    @Override public List<Map<String,Object>> extractDeliveries() {
         DesiredCapabilities caps = new DesiredCapabilities();
-        caps.setCapability("app", oneCPath);
-        caps.setCapability("appArguments", "ENTERPRISE \"" + oneCBase + "\"");
-        caps.setCapability("appWorkingDir", "C:\\Temp");
+        caps.setCapability("app", oneCExe);
+        caps.setCapability("appArguments", "ENTERPRISE " + baseConn);
 
         WindowsDriver driver = new WindowsDriver(new URL(driverUrl), caps);
         try {
-            // Логин в 1С
-            new WebDriverWait(driver, Duration.ofSeconds(15))
+            // 1. Логин
+            new WebDriverWait(driver, Duration.ofSeconds(30))
                 .until(d -> driver.findElementByAccessibilityId("UsernameField"));
-            driver.findElementByAccessibilityId("UsernameField").sendKeys("admin");
-            driver.findElementByName("Войти").click();
+            driver.findElementByAccessibilityId("UsernameField").sendKeys(username);
+            driver.findElementByAccessibilityId("PasswordField").sendKeys(password);
+            driver.findElementByName("ОК").click();
 
-            // Меню: Документы → Поступление товаров
+            // 2. Открыть журнал документов поступления
             driver.findElementByName("Документы").click();
-            driver.findElementByName("Поступление товаров").click();
-            driver.findElementByName("Создать").click();
+            driver.findElementByName(journalName).click();
 
-            // Заполнение шапки
-            driver.findElementByAccessibilityId("Контрагент").sendKeys((String) data.get("supplierName"));
-            driver.findElementByAccessibilityId("Склад").sendKeys((String) data.get("warehouseName"));
+            // 3. Прочитать таблицу строки за строкой
+            WebElement table = new WebDriverWait(driver, Duration.ofSeconds(15))
+                .until(d -> driver.findElementByAccessibilityId("DocumentListTable"));
+            List<WebElement> rows = table.findElements(By.xpath(".//*[@LocalizedControlType='элемент таблицы']"));
 
-            // Табличная часть (товары)
-            @SuppressWarnings("unchecked")
-            List<Map<String,Object>> items = (List<Map<String,Object>>) data.get("items");
-            for (Map<String,Object> item : items) {
-                driver.findElementByName("Добавить").click();
-                driver.findElementByAccessibilityId("Номенклатура").sendKeys((String) item.get("productName"));
-                driver.findElementByAccessibilityId("Количество").sendKeys(item.get("quantity").toString());
+            List<Map<String,Object>> result = new ArrayList<>();
+            for (WebElement row : rows) {
+                List<WebElement> cells = row.findElements(By.xpath("./*"));
+                if (cells.size() < 5) continue;
+                Map<String,Object> d = new HashMap<>();
+                d.put("externalId", cells.get(0).getText().trim());     // номер документа 1С
+                d.put("expectedDate", cells.get(1).getText().trim());   // дата
+                d.put("supplierName", cells.get(2).getText().trim());   // контрагент
+                d.put("productName", cells.get(3).getText().trim());    // номенклатура (первая или агрегированная)
+                d.put("expectedQuantity", cells.get(4).getText().trim());
+                result.add(d);
             }
-
-            // Провести и закрыть
-            driver.findElementByName("Провести и закрыть").click();
-            log.info("1С: документ создан и проведён");
+            return result;
         } finally {
             driver.quit();
         }
@@ -877,59 +814,62 @@ public class WinAppDocumentBot {
 }
 ```
 
-**Endpoint:**
-```java
-@PostMapping("/winapp/create-receipt")
-public ResponseEntity<Map<String,Object>> createReceiptIn1C(@RequestBody Map<String,Object> data) {
-    bot.createReceiptDocument(data);
-    return ResponseEntity.ok(Map.of("status", "ok"));
-}
+**Конфиги:**
+```properties
+erp.extraction.mode=onec
+rpa.onec.driver-url=http://127.0.0.1:4723
+rpa.onec.executable=C:\\Program Files\\1cv8\\common\\1cestart.exe
+rpa.onec.base-connection=/IBConnectionString Srvr=1c-srv;Ref=wms-test
+rpa.onec.username=integration_user
+rpa.onec.password=${ONEC_PASSWORD}
+rpa.onec.journal-name=Поступление товаров и услуг
 ```
 
-**Тесты:** только manual run. Автоматизировать на CI невозможно (нужен Windows + 1С).
+**Дедупликация и downstream — без изменений.** `ErpExtractorJob` берёт `List<Map>` от extractor'а, по `externalId` дедуплицирует, пишет в `planned_deliveries`, публикует RabbitMQ.
 
-**Альтернативный demo-сценарий**, если 1С не доступна или не успеем настроить:
-- **Notepad/Calculator** — proof-of-concept (бот реально набирает текст в Notepad, считает в Калькуляторе). Минимальный wow для защиты, но техническая суть демонстрируется.
-- **MS Excel** — бот открывает .xlsx, читает ячейки, записывает — серединное решение.
+**Тесты:** только manual run. Автоматизировать в CI невозможно (нужен Windows + установленный 1С). Unit-тесты — на маппинг (нарезаем mocked `WebElement.getText()`).
 
-**Оценка:** 1 день для базовой автоматизации одной операции в 1С (после получения доступа). +0.5 дня на калибровку селекторов через Accessibility Insights. **Зависит от того, насколько сложна форма «Поступление товаров» в конкретной конфигурации 1С пользователя.**
+**Что критично — read-only режим:**
+- Пользователь 1С имеет **только право чтения** на нужные справочники/документы. Если бот случайно нажмёт «Удалить» — операция должна заблокироваться правами.
+- Никаких `findElementByName("Удалить")`/`findElementByName("Провести")` в коде бота — только навигация и `.getText()`.
+- На защите — запуск только на **тестовой копии** базы.
 
-### 2.9 Архитектура (итоговая)
+**Альтернативный demo-сценарий** если 1С не дадут вовремя:
+- Macros в Excel-файле имитирующем 1С-журнал — бот читает строки.
+- **Notepad/Calculator** для базового proof-of-concept (бот печатает текст / читает результат).
+
+**Оценка:** 1-1.5 дня после получения доступа к 1С. +0.5-1 дня на калибровку селекторов через Accessibility Insights (зависит от конфигурации 1С пользователя — типовой УТ/УНФ/Бухгалтерия отличаются названиями журналов и структурой форм).
+
+### 2.4 Архитектура (итоговая)
 
 ```
 product-service/src/main/java/by/bsuir/productservice/rpa/
-├── PlannedDeliveryExtractor.java       — interface (расширяется новыми каналами)
-├── RpaHtmlExtractorImpl                — есть, Jsoup, mode=rpa
-├── ApiExtractorImpl                    — есть, REST, mode=api
-├── SeleniumErpExtractorImpl            — НОВОЕ (канал B), mode=selenium
-├── OneCApiExtractorImpl                — НОВОЕ (канал A), mode=onec
+├── PlannedDeliveryExtractor.java       — interface
+├── RpaHtmlExtractorImpl                — есть, Jsoup, dev-fallback (mode=rpa)
+├── ApiExtractorImpl                    — есть, REST, dev-fallback (mode=api)
+├── OneCWinAppExtractorImpl             — НОВОЕ (RPA-1, mode=onec) — read-only парсинг 1С через WinAppDriver
 └── ErpExtractorJob                     — orchestrator (Strategy: @Qualifier по mode)
 
 document-service/src/main/java/by/bsuir/documentservice/rpa/
-├── DocumentRpaService                  — есть, Apache POI (server-side template)
-├── PdfDocumentService                  — есть, PDFBox (server-side PDF)
-├── OfficeDocumentBot                   — НОВОЕ (канал C), desktop UI bot для локального MS Word / MS Excel (WinAppDriver / JACOB)
-└── WinAppDocumentBot                   — НОВОЕ (канал D), desktop UI bot для 1С толстого клиента (WinAppDriver/Appium)
+├── DocumentRpaService                  — есть, Apache POI (server-side template, primary)
+├── PdfDocumentService                  — есть, PDFBox (server-side PDF, primary)
+└── OfficeDocumentBot                   — НОВОЕ (RPA-2), desktop UI bot для локального MS Word / MS Excel (WinAppDriver/Appium или JACOB)
 ```
 
-**Reuse:** Selenium-core используется только в канале B (product-service, web ERP). Каналы C и D — WinAppDriver/Appium стек (`io.appium:java-client`), общая зависимость и общий driver-процесс. Логику скриншотов после каждого шага можно вынести в `common`-utility.
+**Reuse:** WinAppDriver/Appium стек (`io.appium:java-client`) — общая зависимость и общий driver-процесс для RPA-1 (1С толстый клиент, read-only) и RPA-2 (Office). Запускается один раз как Windows-сервис на dev/защитной машине.
 
-### 2.10 Acceptance (целевое состояние RPA-блока)
+### 2.5 Acceptance (целевое состояние RPA-блока)
 
-- ✅ Канал A: `erp.extraction.mode=onec` подключает 1С через OData (после получения доступа).
-- ✅ Канал B: `erp.extraction.mode=selenium` — бот в Chrome (headed/headless) логинится, парсит, скриншоты в `logs/rpa-screenshots/`.
-- ✅ Канал C: `POST /api/documents/office/fill` — бот реально открывает локальный MS Word/Excel, заполняет placeholder'ы из payload, сохраняет PDF. На защите запуск с `rpa.office.headless=false`.
-- ✅ Канал D: `POST /api/documents/winapp/create-receipt` — бот в 1С создаёт документ «Поступление товаров» (после получения доступа к 1С).
-- В пояснительной записке — скриншоты работы каждого бота, объяснение классификации RPA-каналов (server-side integration vs UI automation).
+- ✅ **RPA-1**: `erp.extraction.mode=onec` подключает `OneCWinAppExtractorImpl`. Бот через WinAppDriver открывает 1С толстый клиент, логинится read-only пользователем, парсит журнал «Поступление товаров и услуг», возвращает `List<Map>` строк. `POST /api/erp-extractor/run` пишет в `planned_deliveries`, лог в `extraction_log`. Никаких записей в 1С бот не делает.
+- ✅ **RPA-2**: `POST /api/documents/office/fill` — бот реально открывает локальный MS Word/Excel, заполняет placeholder'ы из payload, сохраняет PDF. На защите запуск с `rpa.office.headless=false` — комиссия видит весь процесс.
+- В пояснительной записке — скриншоты работы каждого бота, объяснение классификации RPA: server-side integration (POI, PDFBox) vs desktop UI automation (WinAppDriver на 1С и Office).
 
-### 2.11 План на следующую сессию (порядок)
+### 2.6 План на следующую сессию (порядок)
 
-1. **`SeleniumErpExtractorImpl`** (канал B) — самостоятельный, mock-erp уже готов. ~0.5-1 день. **Стартуем с этого.**
-2. **`OfficeDocumentBot`** (канал C) — локальный MS Word/Excel через WinAppDriver. Установить WinAppDriver, прокалибровать селекторы Excel (`NameBox`, `Ribbon`). ~1-1.5 дня. JACOB-резерв ещё +0.5 дня если потребуется.
-3. **`WinAppDocumentBot`** (канал D) — после получения доступа к 1С. ~1 день. Зависит от конфигурации 1С пользователя — может потребоваться калибровка селекторов через Accessibility Insights.
-4. **`OneCApiExtractorImpl`** (канал A) — параллельно с D, если есть доступ к 1С с OData-публикацией. ~1-1.5 дня.
+1. **`OfficeDocumentBot`** (RPA-2) — локальный MS Word/Excel через WinAppDriver. Не зависит от 1С. Установить WinAppDriver, прокалибровать селекторы Excel (`NameBox`, `Ribbon`). ~1-1.5 дня. JACOB-резерв ещё +0.5 дня если потребуется. **Стартуем с этого.**
+2. **`OneCWinAppExtractorImpl`** (RPA-1) — после получения доступа к 1С толстому клиенту. ~1.5-2 дня (1-1.5 дня код + 0.5-1 дня калибровка селекторов через Accessibility Insights). Сильно зависит от конфигурации 1С пользователя.
 
-**Итого RPA-блок:** 3.5-5 дней при последовательной работе, можно ужать до 2-3 дней если параллельно с другими ветками.
+**Итого RPA-блок:** 2.5-3.5 дня при последовательной работе.
 
 ---
 
@@ -989,22 +929,28 @@ document-service/src/main/java/by/bsuir/documentservice/rpa/
 
 | Sprint | Цель | Оценка |
 |---|---|---|
-| **§1.5 P0** 🔥 | Фундамент: MinIO + GeneratedDocument + DocumentNumberService + Workflow PAUSED | ~5 дней backend + ~1 день фронт (DocumentsPage) |
-| **HP** 🔥 | HP-1 (11 типов док-в, 4 PENDING RPA-шаблона + picking-list PDF) + HP-2 (пагинация) | 3-4 дня backend + ~1 день фронт |
-| **§1.5 P1** | Export flow (чекбокс + ТН/ТТН/CMR пакет) + inventory tooltip | 2-3 дня (backend + фронт) |
-| **§2 RPA** | 4 канала: A OData/1С + B Selenium-ERP (web) + C Office desktop bot + D WinAppDriver/1С | 3.5-5 дней (можно 2-3 при параллельной работе) |
+| ~~**§1.5 P0** 🔥~~ ✅ DONE | Фундамент: MinIO + GeneratedDocument + DocumentNumberService + Workflow PAUSED + 3 endpoint'а (complete/discrepancy/approve) | сделано 2026-05-13 |
+| ~~**HP-1** 🔥~~ ✅ DONE | 10 типов документов (5 generator'ов + cleanup мёртвых case'ов) | сделано 2026-05-13 |
+| ~~**HP-2**~~ ✅ DONE | Backend (product-service 10 + warehouse-service 3 endpoint'ов) + фронт (5 страниц: SuppliesPage, ShipPage requests, ReceivePage history, AnalyticsPage Operations, DocumentsPage). Все используют эталон Suppliers (TablePagination, page/rowsPerPage state, content/totalElements split). | сделано 2026-05-13 |
+| ~~**Frontend миграция**~~ ✅ DONE | DocumentsPage (`/api/document-registry`) + кнопки workflow на ReceivePage («Принять без замечаний» / «Зафиксировать расхождение» + DiscrepancyDialog с типами SHORTAGE/SURPLUS/DEFECT/MISGRADE/OTHER) | сделано 2026-05-13 |
+| ~~**§1.5.C Export flow**~~ ✅ DONE | Backend (V7+enums+saga.documentIds+MinIO compensation) + фронт ShipPage CreateRequestDialog (чекбокс/radio/dropdown + summary). Inventory tooltip (Q6) — отдельный мелкий таск | сделано 2026-05-13 |
+| **§2 RPA** | (1) ⏳ read-only парсинг 1С через WinAppDriver — ждём доступа к 1С. (2) ✅ Office-bot DONE 2026-05-13: bot + endpoint `POST /api/documents/office/fill` + **интеграция как primary канал** через `X-Generation-Mode: auto\|rpa` header + `RpaTemplateBinding` (proof-of-concept на receipt-order) + fallback на POI с уведомлением + Settings UI toggle | 1.5-2 дня (только 1С + binding для остальных 9 типов) |
 | **+ парал.** | F5 design system | 1-2 дня (фронт) |
 
 **Порядок (следующая сессия):**
-1. **§1.5.D** DocumentNumberService (0.5 дня) — фундамент для номеров.
-2. **§1.5.A** MinIO + GeneratedDocument (2-2.5 дня) — без него HP-1 регистрировать документы некуда.
-3. **HP-1** + 4 generator'а + picking-list PDF (1.5-2 дня).
-4. **§1.5.B** Workflow PAUSED + всегда-акт (2-3 дня).
-5. **§1.5.C** Export flow (параллельно с HP-2 фронтовой пагинацией).
-6. **§2 RPA** канал B → C → D → A.
+1. ~~**§1.5.D** DocumentNumberService~~ ✅
+2. ~~**§1.5.A** MinIO + GeneratedDocument~~ ✅
+3. ~~**§1.5.B** Workflow PAUSED + всегда-акт~~ ✅
+4. ~~**HP-1** 5 generator'ов POI + picking-list PDF + cleanup мёртвых типов~~ ✅ DONE 2026-05-13
+5. ~~**HP-2 product-service** — 10 endpoint'ов paginated~~ ✅ DONE 2026-05-13
+6. ~~**HP-2 warehouse-service** — 3 endpoint'а (Warehouse.getAll/getByOrg, Rack.getRacksByWarehouse). `getCellsByRack`/`getSlotsByRack` оставлены без пагинации (polymorphic by rack.kind)~~ ✅ DONE 2026-05-13
+7. ~~**HP-2 Frontend** — 5 страниц (SuppliesPage, ShipPage, ReceivePage history, AnalyticsPage Operations, DocumentsPage)~~ ✅ DONE 2026-05-13.
+8. ~~**Frontend миграция §1.5**~~ ✅ DONE 2026-05-13. DocumentsPage + кнопки workflow на ReceivePage + DiscrepancyDialog.
+9. **§1.5.C** Export flow (P1).
+10. **§2 RPA**: ~~RPA-2 (Office)~~ ✅ DONE 2026-05-13 → **RPA-1** (read-only парсинг 1С через WinAppDriver, после получения доступа к 1С).
 
-**Минимум до защиты:** §1.5 P0 + HP + §2 каналы B+C+D = **~2.5-3 недели**.
-**Полный план:** + §1.5 P1 + канал A + F5 + I5 = **~3.5-4 недели**.
+**Минимум до защиты:** §1.5 P0 + HP + §2 RPA-2 + RPA-1 = **~2.5-3 недели**.
+**Полный план:** + §1.5 P1 + F5 + I5 = **~3-3.5 недели**.
 
 ---
 
