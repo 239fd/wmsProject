@@ -2,7 +2,6 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: backend-network-policy
-  namespace: wms
 spec:
   podSelector:
     matchLabels:
@@ -15,7 +14,15 @@ spec:
     - podSelector:
         matchLabels:
           app: api-gateway
+    - podSelector:
+        matchLabels:
+          app: prometheus
+    - podSelector:
+        matchLabels:
+          tier: backend
     ports:
+    - protocol: TCP
+      port: 8000
     - protocol: TCP
       port: 8010
     - protocol: TCP
@@ -25,7 +32,7 @@ spec:
     - protocol: TCP
       port: 8040
     - protocol: TCP
-      port: 8000
+      port: 8761
   egress:
   - to:
     - podSelector:
@@ -44,10 +51,28 @@ spec:
   - to:
     - podSelector:
         matchLabels:
+          app: rabbitmq
+    ports:
+    - protocol: TCP
+      port: 5672
+  - to:
+    - podSelector:
+        matchLabels:
+          app: minio
+    ports:
+    - protocol: TCP
+      port: 9000
+  - to:
+    - podSelector:
+        matchLabels:
           app: eureka-server
     ports:
     - protocol: TCP
       port: 8761
+  - to:
+    - podSelector:
+        matchLabels:
+          tier: backend
   - ports:
     - protocol: TCP
       port: 53
@@ -58,7 +83,6 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: database-network-policy
-  namespace: wms
 spec:
   podSelector:
     matchLabels:
@@ -78,7 +102,6 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: redis-network-policy
-  namespace: wms
 spec:
   podSelector:
     matchLabels:
@@ -90,6 +113,9 @@ spec:
     - podSelector:
         matchLabels:
           app: sso-service
+    - podSelector:
+        matchLabels:
+          app: api-gateway
     ports:
     - protocol: TCP
       port: 6379
@@ -98,7 +124,6 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: api-gateway-network-policy
-  namespace: wms
 spec:
   podSelector:
     matchLabels:
@@ -124,6 +149,13 @@ spec:
     ports:
     - protocol: TCP
       port: 8761
+  - to:
+    - podSelector:
+        matchLabels:
+          app: redis
+    ports:
+    - protocol: TCP
+      port: 6379
   - ports:
     - protocol: TCP
       port: 53

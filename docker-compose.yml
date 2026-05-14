@@ -122,6 +122,43 @@ services:
       timeout: 5s
       retries: 5
 
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: wmsadmin
+      MINIO_ROOT_PASSWORD: wmsadmin12345
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    networks:
+      - wms-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 wmsadmin wmsadmin12345;
+      mc mb --ignore-existing local/wms-documents;
+      mc anonymous set download local/wms-documents;
+      exit 0;
+      "
+    networks:
+      - wms-network
+
   eureka-server:
     build:
       context: ./backend/eureka-server
@@ -150,8 +187,12 @@ services:
     environment:
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka
       SSO_SERVICE_URL: http://sso-service:8000
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
     depends_on:
       eureka-server:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     networks:
       - wms-network
@@ -178,12 +219,18 @@ services:
       SPRING_JPA_HIBERNATE_DDL_AUTO: update
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: guest
+      SPRING_RABBITMQ_PASSWORD: guest
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka
       EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
     depends_on:
       postgres-sso:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
       eureka-server:
         condition: service_healthy
@@ -353,4 +400,5 @@ volumes:
   pg_data_product:
   redis_data:
   rabbitmq_data:
+  minio_data:
 

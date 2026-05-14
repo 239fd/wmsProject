@@ -10,6 +10,9 @@ spec:
   storageClassName: standard
   hostPath:
     path: /mnt/data/postgres/organization
+  claimRef:
+    namespace: wms
+    name: postgres-storage-postgres-organization-0
   nodeAffinity:
     required:
       nodeSelectorTerms:
@@ -31,6 +34,9 @@ spec:
   storageClassName: standard
   hostPath:
     path: /mnt/data/postgres/product
+  claimRef:
+    namespace: wms
+    name: postgres-storage-postgres-product-0
   nodeAffinity:
     required:
       nodeSelectorTerms:
@@ -52,6 +58,9 @@ spec:
   storageClassName: standard
   hostPath:
     path: /mnt/data/postgres/warehouse
+  claimRef:
+    namespace: wms
+    name: postgres-storage-postgres-warehouse-0
   nodeAffinity:
     required:
       nodeSelectorTerms:
@@ -73,6 +82,9 @@ spec:
   storageClassName: standard
   hostPath:
     path: /mnt/data/postgres/sso
+  claimRef:
+    namespace: wms
+    name: postgres-storage-postgres-sso-0
   nodeAffinity:
     required:
       nodeSelectorTerms:
@@ -94,6 +106,57 @@ spec:
   storageClassName: standard
   hostPath:
     path: /mnt/data/redis
+  claimRef:
+    namespace: wms
+    name: redis-storage-redis-0
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: node-role.storage
+          operator: In
+          values:
+          - "true"
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: minio-pv
+spec:
+  capacity:
+    storage: 20Gi
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: standard
+  hostPath:
+    path: /mnt/data/minio
+  claimRef:
+    namespace: wms
+    name: minio-storage-minio-0
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: node-role.storage
+          operator: In
+          values:
+          - "true"
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: rabbitmq-pv
+spec:
+  capacity:
+    storage: 5Gi
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: standard
+  hostPath:
+    path: /mnt/data/rabbitmq
+  claimRef:
+    namespace: wms
+    name: rabbitmq-storage-rabbitmq-0
   nodeAffinity:
     required:
       nodeSelectorTerms:

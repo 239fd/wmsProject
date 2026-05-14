@@ -136,6 +136,7 @@ CREATE TABLE product_operation (
     user_id         UUID NOT NULL,
     document_id     UUID,
     supply_id       UUID,
+    status          VARCHAR(32) NOT NULL DEFAULT 'COMPLETED',
     operation_date  TIMESTAMP NOT NULL DEFAULT now(),
     notes           TEXT
 );
@@ -144,6 +145,7 @@ CREATE INDEX idx_product_operation_product_id ON product_operation(product_id);
 CREATE INDEX idx_product_operation_organization_id ON product_operation(organization_id);
 CREATE INDEX idx_product_operation_warehouse_id ON product_operation(warehouse_id);
 CREATE INDEX idx_product_operation_operation_date ON product_operation(operation_date);
+CREATE INDEX idx_product_operation_status ON product_operation(status);
 
 CREATE TABLE product_operation_events (
     event_id        BIGSERIAL PRIMARY KEY,
@@ -228,24 +230,31 @@ CREATE TABLE supply_items (
 );
 
 CREATE TABLE shipment_request (
-    request_id        UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    organization_id   UUID,
-    warehouse_id      UUID NOT NULL,
-    recipient_name    VARCHAR(255),
-    recipient_address VARCHAR(512),
-    recipient_inn     VARCHAR(50),
-    planned_date      DATE,
-    comment           TEXT,
-    status            VARCHAR(20) NOT NULL DEFAULT 'PLANNED',
-    strategy          VARCHAR(16) NOT NULL DEFAULT 'AUTO',
-    created_by        UUID,
-    created_at        TIMESTAMP NOT NULL DEFAULT now(),
-    updated_at        TIMESTAMP NOT NULL DEFAULT now()
+    request_id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id        UUID,
+    warehouse_id           UUID NOT NULL,
+    recipient_name         VARCHAR(255),
+    recipient_address      VARCHAR(512),
+    recipient_inn          VARCHAR(50),
+    planned_date           DATE,
+    comment                TEXT,
+    status                 VARCHAR(20) NOT NULL DEFAULT 'PLANNED',
+    strategy               VARCHAR(16) NOT NULL DEFAULT 'AUTO',
+    shipment_type          VARCHAR(16) NOT NULL DEFAULT 'DOMESTIC',
+    currency               VARCHAR(3)  NOT NULL DEFAULT 'BYN',
+    document_layout        VARCHAR(16) NOT NULL DEFAULT 'HORIZONTAL',
+    domestic_document_kind VARCHAR(8)  NOT NULL DEFAULT 'TN',
+    recipient_country      VARCHAR(64),
+    recipient_gln          VARCHAR(32),
+    created_by             UUID,
+    created_at             TIMESTAMP NOT NULL DEFAULT now(),
+    updated_at             TIMESTAMP NOT NULL DEFAULT now()
 );
 
 CREATE INDEX idx_shipment_request_organization_id ON shipment_request(organization_id);
 CREATE INDEX idx_shipment_request_warehouse_id ON shipment_request(warehouse_id);
 CREATE INDEX idx_shipment_request_status ON shipment_request(status);
+CREATE INDEX idx_shipment_request_shipment_type ON shipment_request(shipment_type);
 
 CREATE TABLE shipment_request_items (
     item_id      UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -292,3 +301,35 @@ CREATE TABLE extraction_log (
 );
 
 CREATE INDEX idx_extraction_log_source ON extraction_log(source);
+
+CREATE TABLE document_counters (
+    organization_id UUID NOT NULL,
+    document_type   VARCHAR(50) NOT NULL,
+    year            INT NOT NULL,
+    counter         BIGINT NOT NULL DEFAULT 0,
+    PRIMARY KEY (organization_id, document_type, year)
+);
+
+CREATE INDEX idx_document_counters_org_year ON document_counters(organization_id, year);
+
+CREATE TABLE generated_documents (
+    id                UUID PRIMARY KEY,
+    organization_id   UUID NOT NULL,
+    operation_id      UUID,
+    document_type     VARCHAR(50) NOT NULL,
+    document_number   VARCHAR(50) NOT NULL,
+    minio_object_key  VARCHAR(255) NOT NULL,
+    file_format       VARCHAR(10) NOT NULL,
+    generated_by      UUID NOT NULL,
+    generated_at      TIMESTAMP NOT NULL DEFAULT now(),
+    payload           JSONB,
+    CONSTRAINT uk_generated_documents_number
+        UNIQUE (organization_id, document_type, document_number)
+);
+
+CREATE INDEX idx_generated_documents_org_op
+    ON generated_documents(organization_id, operation_id);
+CREATE INDEX idx_generated_documents_type
+    ON generated_documents(organization_id, document_type);
+CREATE INDEX idx_generated_documents_generated_at
+    ON generated_documents(generated_at);

@@ -1,0 +1,612 @@
+apiVersion: v1
+data:
+  organizationDB.sql: |
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+    CREATE TYPE org_status AS ENUM ('ACTIVE', 'ARCHIVED');
+
+    CREATE TABLE organization_read_model
+    (
+        org_id     UUID PRIMARY KEY      DEFAULT uuid_generate_v4(),
+        name       VARCHAR(255) NOT NULL,
+        short_name VARCHAR(255),
+        unp        VARCHAR(512) NOT NULL,
+        address    VARCHAR(512),
+        status     org_status   NOT NULL DEFAULT 'ACTIVE',
+        created_at TIMESTAMP    NOT NULL DEFAULT now(),
+        updated_at TIMESTAMP    NOT NULL DEFAULT now(),
+        CONSTRAINT uk_organization_name UNIQUE (name),
+        CONSTRAINT uk_organization_unp UNIQUE (unp)
+    );
+
+    CREATE TABLE organization_events
+    (
+        event_id      BIGSERIAL PRIMARY KEY,
+        org_id        UUID        NOT NULL,
+        event_type    VARCHAR(50) NOT NULL,
+        event_data    JSONB       NOT NULL,
+        event_version INT         NOT NULL,
+        created_at    TIMESTAMP   NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX idx_organization_events_org_id ON organization_events (org_id);
+
+    CREATE TABLE organization_employees
+    (
+        id         UUID PRIMARY KEY     DEFAULT uuid_generate_v4(),
+        user_id    UUID        NOT NULL,
+        org_id     UUID        NOT NULL,
+        role       VARCHAR(50) NOT NULL,
+        joined_at  TIMESTAMP   NOT NULL DEFAULT now(),
+        removed_at TIMESTAMP,
+        is_active  BOOLEAN     NOT NULL DEFAULT TRUE,
+        is_blocked BOOLEAN     NOT NULL DEFAULT FALSE,
+        blocked_at TIMESTAMP,
+        CONSTRAINT fk_org_employee_org FOREIGN KEY (org_id) REFERENCES organization_read_model (org_id) ON DELETE CASCADE,
+        CONSTRAINT uk_user_org UNIQUE (user_id, org_id)
+    );
+
+    CREATE INDEX idx_organization_employees_user_id ON organization_employees (user_id);
+    CREATE INDEX idx_organization_employees_org_id ON organization_employees (org_id);
+    CREATE INDEX idx_organization_employees_is_active ON organization_employees (is_active);
+
+    CREATE TABLE organization_invitation_codes
+    (
+        code_id         UUID PRIMARY KEY     DEFAULT uuid_generate_v4(),
+        org_id          UUID        NOT NULL,
+        warehouse_id    UUID,
+        invitation_code VARCHAR(64) NOT NULL UNIQUE,
+        created_at      TIMESTAMP   NOT NULL DEFAULT now(),
+        expires_at      TIMESTAMP   NOT NULL,
+        is_active       BOOLEAN     NOT NULL DEFAULT TRUE,
+        CONSTRAINT fk_invitation_org FOREIGN KEY (org_id) REFERENCES organization_read_model (org_id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX idx_invitation_codes_org_id ON organization_invitation_codes (org_id);
+    CREATE INDEX idx_invitation_codes_code ON organization_invitation_codes (invitation_code) WHERE is_active = TRUE;
+
+    CREATE TABLE organization_invitations
+    (
+        invitation_id    UUID PRIMARY KEY      DEFAULT uuid_generate_v4(),
+        invitation_token UUID         NOT NULL UNIQUE,
+        org_id           UUID         NOT NULL,
+        email            VARCHAR(255) NOT NULL,
+        role             VARCHAR(50)  NOT NULL,
+        warehouse_id     UUID,
+        created_by       UUID         NOT NULL,
+        created_at       TIMESTAMP    NOT NULL DEFAULT now(),
+        expires_at       TIMESTAMP    NOT NULL,
+        used             BOOLEAN      NOT NULL DEFAULT FALSE,
+        used_at          TIMESTAMP,
+        used_by          UUID,
+        CONSTRAINT fk_invitation_org FOREIGN KEY (org_id) REFERENCES organization_read_model (org_id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX idx_invitations_token ON organization_invitations (invitation_token);
+    CREATE INDEX idx_invitations_org_id ON organization_invitations (org_id);
+    CREATE INDEX idx_invitations_email ON organization_invitations (email);
+  productDB.sql: |
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+    CREATE TABLE product_read_model (
+        product_id      UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        name            VARCHAR(255) NOT NULL,
+        sku             VARCHAR(100) UNIQUE,
+        barcode         VARCHAR(100),
+        category        VARCHAR(100),
+        description     TEXT,
+        unit_of_measure VARCHAR(50),
+        weight_kg       NUMERIC(10, 2),
+        volume_m3       NUMERIC(10, 3),
+        price           NUMERIC(12, 2),
+        abc_class       VARCHAR(255) NOT NULL DEFAULT 'C',
+        organization_id UUID,
+        created_at      TIMESTAMP NOT NULL DEFAULT now(),
+        updated_at      TIMESTAMP NOT NULL DEFAULT now()
+    );
+    CREATE INDEX idx_product_org_id ON product_read_model(organization_id);
+
+    CREATE INDEX idx_product_read_model_sku ON product_read_model(sku);
+    CREATE INDEX idx_product_read_model_barcode ON product_read_model(barcode);
+    CREATE INDEX idx_product_read_model_category ON product_read_model(category);
+
+    CREATE TABLE product_events (
+        event_id        BIGSERIAL PRIMARY KEY,
+        product_id      UUID NOT NULL,
+        event_type      VARCHAR(50) NOT NULL,
+        event_data      JSONB NOT NULL,
+        event_version   INT NOT NULL,
+        created_at      TIMESTAMP NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX idx_product_events_product_id ON product_events(product_id);
+
+    CREATE TABLE inventory_events (
+        event_id        BIGSERIAL PRIMARY KEY,
+        inventory_id    UUID NOT NULL,
+        event_type      VARCHAR(50) NOT NULL,
+        event_data      JSONB NOT NULL,
+        event_version   INT NOT NULL,
+        created_at      TIMESTAMP NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX idx_inventory_events_inventory_id ON inventory_events(inventory_id);
+    CREATE INDEX idx_inventory_events_created_at ON inventory_events(created_at);
+
+    CREATE TABLE product_batch (
+        batch_id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        product_id         UUID NOT NULL,
+        organization_id    UUID,
+        supply_id          UUID,
+        batch_number       VARCHAR(100),
+        manufacture_date   DATE,
+        expiry_date        DATE,
+        supplier           VARCHAR(255),
+        purchase_price     NUMERIC(12, 2),
+        storage_conditions VARCHAR(20),
+        created_at         TIMESTAMP NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX idx_product_batch_product_id ON product_batch(product_id);
+    CREATE INDEX idx_product_batch_organization_id ON product_batch(organization_id);
+    CREATE INDEX idx_product_batch_supply_id ON product_batch(supply_id);
+    CREATE INDEX idx_product_batch_expiry_date ON product_batch(expiry_date);
+
+    CREATE TABLE inventory (
+        inventory_id      UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        product_id        UUID NOT NULL,
+        batch_id          UUID,
+        organization_id   UUID,
+        warehouse_id      UUID NOT NULL,
+        cell_id           UUID,
+        unit_sku          VARCHAR(20),
+        quantity          NUMERIC(12, 3) NOT NULL,
+        reserved_quantity NUMERIC(12, 3) NOT NULL DEFAULT 0,
+        status            VARCHAR NOT NULL,
+        last_updated      TIMESTAMP NOT NULL DEFAULT now(),
+        version           BIGINT NOT NULL DEFAULT 0,
+        CONSTRAINT uk_inventory_product_batch_warehouse_cell UNIQUE (product_id, batch_id, warehouse_id, cell_id)
+    );
+
+    CREATE INDEX idx_inventory_product_id ON inventory(product_id);
+    CREATE INDEX idx_inventory_organization_id ON inventory(organization_id);
+    CREATE INDEX idx_inventory_warehouse_id ON inventory(warehouse_id);
+    CREATE INDEX idx_inventory_cell_id ON inventory(cell_id);
+    CREATE INDEX idx_inventory_unit_sku ON inventory(unit_sku);
+
+    CREATE TABLE inventory_session (
+        session_id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        organization_id      UUID,
+        warehouse_id         UUID NOT NULL,
+        started_by           UUID NOT NULL,
+        responsible_user_id  UUID,
+        reason               VARCHAR(255),
+        commission_members   JSONB,
+        started_at           TIMESTAMP NOT NULL DEFAULT now(),
+        completed_at         TIMESTAMP,
+        status               VARCHAR(50) NOT NULL,
+        notes                VARCHAR(255)
+    );
+
+    CREATE INDEX idx_inventory_session_organization_id ON inventory_session(organization_id);
+    CREATE INDEX idx_inventory_session_warehouse_id ON inventory_session(warehouse_id);
+    CREATE INDEX idx_inventory_session_status ON inventory_session(status);
+
+    CREATE TABLE inventory_count (
+        count_id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        session_id           UUID NOT NULL REFERENCES inventory_session(session_id) ON DELETE CASCADE,
+        organization_id      UUID,
+        product_id           UUID NOT NULL,
+        batch_id             UUID,
+        cell_id              UUID,
+        warehouse_id         UUID NOT NULL,
+        expected_quantity    NUMERIC(12, 3) NOT NULL,
+        actual_quantity      NUMERIC(12, 3),
+        discrepancy          NUMERIC(12, 3),
+        marked_for_writeoff  BOOLEAN NOT NULL DEFAULT FALSE,
+        notes                VARCHAR(255)
+    );
+
+    CREATE INDEX idx_inventory_count_session_id ON inventory_count(session_id);
+    CREATE INDEX idx_inventory_count_organization_id ON inventory_count(organization_id);
+    CREATE INDEX idx_inventory_count_marked_for_writeoff ON inventory_count(marked_for_writeoff);
+
+    CREATE TABLE product_operation (
+        operation_id    UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        operation_type  VARCHAR NOT NULL,
+        product_id      UUID NOT NULL,
+        batch_id        UUID,
+        organization_id UUID,
+        warehouse_id    UUID NOT NULL,
+        from_cell_id    UUID,
+        to_cell_id      UUID,
+        quantity        NUMERIC(12, 3) NOT NULL,
+        user_id         UUID NOT NULL,
+        document_id     UUID,
+        supply_id       UUID,
+        status          VARCHAR(32) NOT NULL DEFAULT 'COMPLETED',
+        operation_date  TIMESTAMP NOT NULL DEFAULT now(),
+        notes           TEXT
+    );
+
+    CREATE INDEX idx_product_operation_product_id ON product_operation(product_id);
+    CREATE INDEX idx_product_operation_organization_id ON product_operation(organization_id);
+    CREATE INDEX idx_product_operation_warehouse_id ON product_operation(warehouse_id);
+    CREATE INDEX idx_product_operation_operation_date ON product_operation(operation_date);
+    CREATE INDEX idx_product_operation_status ON product_operation(status);
+
+    CREATE TABLE product_operation_events (
+        event_id        BIGSERIAL PRIMARY KEY,
+        operation_id    UUID NOT NULL,
+        event_type      VARCHAR(50) NOT NULL,
+        event_data      JSONB NOT NULL,
+        event_version   INT NOT NULL,
+        created_at      TIMESTAMP NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX idx_operation_events_operation_id ON product_operation_events(operation_id);
+    CREATE INDEX idx_operation_events_created_at ON product_operation_events(created_at);
+
+    CREATE TABLE suppliers (
+        supplier_id     UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        organization_id UUID,
+        name            VARCHAR(255) NOT NULL,
+        unp             VARCHAR(20),
+        contact_person  VARCHAR(255),
+        phone           VARCHAR(50),
+        email           VARCHAR(255),
+        address         VARCHAR(512),
+        is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at      TIMESTAMP NOT NULL DEFAULT now(),
+        updated_at      TIMESTAMP NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX idx_suppliers_organization_id ON suppliers(organization_id);
+    CREATE INDEX idx_suppliers_name ON suppliers(name);
+    CREATE INDEX idx_suppliers_unp ON suppliers(unp);
+
+    CREATE TYPE supply_status AS ENUM ('PLANNED', 'IN_PROGRESS', 'ACCEPTED', 'REJECTED', 'CANCELLED');
+
+    CREATE TABLE supplies (
+        supply_id       UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        organization_id UUID,
+        supplier_id     UUID REFERENCES suppliers(supplier_id),
+        warehouse_id    UUID NOT NULL,
+        status          supply_status NOT NULL DEFAULT 'PLANNED',
+        expected_date   DATE,
+        actual_date     DATE,
+        total_items     INT NOT NULL DEFAULT 0,
+        notes           TEXT,
+        created_by      UUID NOT NULL,
+        created_at      TIMESTAMP NOT NULL DEFAULT now(),
+        updated_at      TIMESTAMP NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX idx_supplies_organization_id ON supplies(organization_id);
+    CREATE INDEX idx_supplies_supplier_id ON supplies(supplier_id);
+    CREATE INDEX idx_supplies_warehouse_id ON supplies(warehouse_id);
+    CREATE INDEX idx_supplies_status ON supplies(status);
+
+    CREATE TYPE saga_type AS ENUM ('RECEIVE', 'SHIP');
+    CREATE TYPE saga_status AS ENUM ('PENDING', 'COMPLETED', 'FAILED', 'COMPENSATING', 'COMPENSATED', 'COMPENSATION_FAILED');
+
+    CREATE TABLE saga_state (
+        saga_id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        saga_type       saga_type NOT NULL,
+        status          saga_status NOT NULL DEFAULT 'PENDING',
+        current_step    VARCHAR(50) NOT NULL,
+        payload         JSONB NOT NULL,
+        failure_reason  TEXT,
+        created_at      TIMESTAMP NOT NULL DEFAULT now(),
+        updated_at      TIMESTAMP NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX idx_saga_state_type ON saga_state(saga_type);
+    CREATE INDEX idx_saga_state_status ON saga_state(status);
+    CREATE INDEX idx_saga_state_created_at ON saga_state(created_at);
+
+    CREATE INDEX idx_supplies_expected_date ON supplies(expected_date);
+
+    CREATE TABLE supply_items (
+        item_id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        supply_id       UUID NOT NULL REFERENCES supplies(supply_id) ON DELETE CASCADE,
+        product_id      UUID NOT NULL,
+        expected_qty    NUMERIC(12, 3) NOT NULL,
+        actual_qty      NUMERIC(12, 3),
+        unit_price      NUMERIC(12, 2),
+        notes           VARCHAR(255)
+    );
+
+    CREATE TABLE shipment_request (
+        request_id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        organization_id        UUID,
+        warehouse_id           UUID NOT NULL,
+        recipient_name         VARCHAR(255),
+        recipient_address      VARCHAR(512),
+        recipient_inn          VARCHAR(50),
+        planned_date           DATE,
+        comment                TEXT,
+        status                 VARCHAR(20) NOT NULL DEFAULT 'PLANNED',
+        strategy               VARCHAR(16) NOT NULL DEFAULT 'AUTO',
+        shipment_type          VARCHAR(16) NOT NULL DEFAULT 'DOMESTIC',
+        currency               VARCHAR(3)  NOT NULL DEFAULT 'BYN',
+        document_layout        VARCHAR(16) NOT NULL DEFAULT 'HORIZONTAL',
+        domestic_document_kind VARCHAR(8)  NOT NULL DEFAULT 'TN',
+        recipient_country      VARCHAR(64),
+        recipient_gln          VARCHAR(32),
+        created_by             UUID,
+        created_at             TIMESTAMP NOT NULL DEFAULT now(),
+        updated_at             TIMESTAMP NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX idx_shipment_request_organization_id ON shipment_request(organization_id);
+    CREATE INDEX idx_shipment_request_warehouse_id ON shipment_request(warehouse_id);
+    CREATE INDEX idx_shipment_request_status ON shipment_request(status);
+    CREATE INDEX idx_shipment_request_shipment_type ON shipment_request(shipment_type);
+
+    CREATE TABLE shipment_request_items (
+        item_id      UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        request_id   UUID NOT NULL REFERENCES shipment_request(request_id) ON DELETE CASCADE,
+        product_id   UUID NOT NULL,
+        batch_id     UUID,
+        expected_qty NUMERIC(12, 3) NOT NULL,
+        picked_qty   NUMERIC(12, 3) NOT NULL DEFAULT 0,
+        unit_sku     VARCHAR(20),
+        status       VARCHAR(20) NOT NULL DEFAULT 'PENDING'
+    );
+
+    CREATE INDEX idx_shipment_request_items_request_id ON shipment_request_items(request_id);
+    CREATE INDEX idx_shipment_request_items_unit_sku ON shipment_request_items(unit_sku);
+
+    CREATE INDEX idx_supply_items_supply_id ON supply_items(supply_id);
+    CREATE INDEX idx_supply_items_product_id ON supply_items(product_id);
+
+    CREATE TABLE planned_deliveries (
+        delivery_id       UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        external_id       VARCHAR(100) NOT NULL UNIQUE,
+        organization_id   UUID,
+        supplier_name     VARCHAR(255),
+        product_name      VARCHAR(255),
+        expected_quantity INT,
+        expected_date     DATE,
+        warehouse_id      UUID,
+        source            VARCHAR(50),
+        extracted_at      TIMESTAMP NOT NULL DEFAULT now(),
+        processed         BOOLEAN NOT NULL DEFAULT FALSE
+    );
+
+    CREATE INDEX idx_planned_deliveries_external_id ON planned_deliveries(external_id);
+    CREATE INDEX idx_planned_deliveries_expected_date ON planned_deliveries(expected_date);
+
+    CREATE TABLE extraction_log (
+        log_id          BIGSERIAL PRIMARY KEY,
+        source          VARCHAR(50) NOT NULL,
+        extracted_at    TIMESTAMP NOT NULL DEFAULT now(),
+        records_found   INT,
+        records_new     INT,
+        success         BOOLEAN NOT NULL,
+        error_message   TEXT
+    );
+
+    CREATE INDEX idx_extraction_log_source ON extraction_log(source);
+
+    CREATE TABLE document_counters (
+        organization_id UUID NOT NULL,
+        document_type   VARCHAR(50) NOT NULL,
+        year            INT NOT NULL,
+        counter         BIGINT NOT NULL DEFAULT 0,
+        PRIMARY KEY (organization_id, document_type, year)
+    );
+
+    CREATE INDEX idx_document_counters_org_year ON document_counters(organization_id, year);
+
+    CREATE TABLE generated_documents (
+        id                UUID PRIMARY KEY,
+        organization_id   UUID NOT NULL,
+        operation_id      UUID,
+        document_type     VARCHAR(50) NOT NULL,
+        document_number   VARCHAR(50) NOT NULL,
+        minio_object_key  VARCHAR(255) NOT NULL,
+        file_format       VARCHAR(10) NOT NULL,
+        generated_by      UUID NOT NULL,
+        generated_at      TIMESTAMP NOT NULL DEFAULT now(),
+        payload           JSONB,
+        CONSTRAINT uk_generated_documents_number
+            UNIQUE (organization_id, document_type, document_number)
+    );
+
+    CREATE INDEX idx_generated_documents_org_op
+        ON generated_documents(organization_id, operation_id);
+    CREATE INDEX idx_generated_documents_type
+        ON generated_documents(organization_id, document_type);
+    CREATE INDEX idx_generated_documents_generated_at
+        ON generated_documents(generated_at);
+  userDB.sql: |
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+    CREATE TYPE user_role AS ENUM ('WORKER', 'ACCOUNTANT', 'DIRECTOR');
+    CREATE TYPE auth_provider AS ENUM ('LOCAL', 'GOOGLE', 'YANDEX');
+
+    CREATE TABLE user_events
+    (
+        event_id      SERIAL PRIMARY KEY,
+        user_id       UUID        NOT NULL,
+        event_type    VARCHAR(50) NOT NULL,
+        event_data    JSONB       NOT NULL,
+        event_version INT         NOT NULL,
+        created_at    TIMESTAMP   NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX idx_user_events_user_id ON user_events (user_id);
+
+    CREATE TABLE user_read_model
+    (
+        user_id         UUID PRIMARY KEY       DEFAULT uuid_generate_v4(),
+        email           VARCHAR(255)  NOT NULL UNIQUE,
+        full_name       VARCHAR(255)  NOT NULL,
+        role            user_role     NOT NULL,
+        password_hash   VARCHAR(255),
+        provider        auth_provider NOT NULL,
+        photo           BYTEA,
+        organization_id UUID,
+        warehouse_id    UUID,
+        is_active       BOOLEAN       NOT NULL DEFAULT TRUE,
+        created_at      TIMESTAMP     NOT NULL DEFAULT now(),
+        updated_at      TIMESTAMP     NOT NULL DEFAULT now()
+    );
+
+    CREATE TABLE login_audit
+    (
+        id                 SERIAL PRIMARY KEY,
+        user_id            UUID          NOT NULL,
+        login_at           TIMESTAMP     NOT NULL DEFAULT now(),
+        ip_address         TEXT,
+        user_agent         VARCHAR(512),
+        provider           auth_provider NOT NULL,
+        refresh_token_hash VARCHAR(60) UNIQUE,
+        is_active          BOOLEAN       NOT NULL DEFAULT TRUE,
+        logout_at          TIMESTAMP
+    );
+
+    CREATE INDEX idx_login_audit_user_id ON login_audit (user_id);
+    CREATE INDEX idx_login_audit_refresh_token_hash ON login_audit (refresh_token_hash);
+
+    CREATE TABLE oauth_pending_registrations
+    (
+        id              UUID PRIMARY KEY      DEFAULT uuid_generate_v4(),
+        temporary_token VARCHAR(255) NOT NULL UNIQUE,
+        email           VARCHAR(255) NOT NULL,
+        full_name       VARCHAR(255),
+        provider        VARCHAR(20)  NOT NULL,
+        provider_uid    VARCHAR(255) NOT NULL,
+        photo           BYTEA,
+        state_token     VARCHAR(255),
+        created_at      TIMESTAMP    NOT NULL DEFAULT now(),
+        expires_at      TIMESTAMP    NOT NULL,
+        completed       BOOLEAN      NOT NULL DEFAULT FALSE
+    );
+
+    CREATE INDEX idx_oauth_pending_temporary_token ON oauth_pending_registrations (temporary_token);
+  warehouseDB.sql: |
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+    CREATE TYPE rack_kind AS ENUM ('SHELF', 'CELL', 'FRIDGE', 'PALLET');
+
+    CREATE TABLE warehouse_read_model
+    (
+        warehouse_id        UUID PRIMARY KEY      DEFAULT uuid_generate_v4(),
+        org_id              UUID         NOT NULL,
+        name                VARCHAR(255) NOT NULL,
+        address             VARCHAR(512),
+        responsible_user_id UUID,
+        is_active           BOOLEAN      NOT NULL DEFAULT TRUE,
+        created_at          TIMESTAMP    NOT NULL DEFAULT now(),
+        updated_at          TIMESTAMP    NOT NULL DEFAULT now(),
+        CONSTRAINT uk_warehouse_org_name UNIQUE (org_id, name)
+    );
+
+    CREATE INDEX idx_warehouse_read_model_org_id ON warehouse_read_model (org_id);
+
+    CREATE TABLE warehouse_events
+    (
+        event_id      BIGSERIAL PRIMARY KEY,
+        warehouse_id  UUID        NOT NULL,
+        event_type    VARCHAR(50) NOT NULL,
+        event_data    JSONB       NOT NULL,
+        event_version INT         NOT NULL,
+        created_at    TIMESTAMP   NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX idx_warehouse_events_warehouse_id ON warehouse_events (warehouse_id);
+
+    CREATE TABLE rack_read_model
+    (
+        rack_id            UUID PRIMARY KEY      DEFAULT uuid_generate_v4(),
+        warehouse_id       UUID         NOT NULL REFERENCES warehouse_read_model (warehouse_id) ON DELETE CASCADE,
+        kind               rack_kind    NOT NULL,
+        name               VARCHAR(255) NOT NULL,
+        storage_conditions VARCHAR(20),
+        is_active          BOOLEAN      NOT NULL DEFAULT TRUE,
+        created_at         TIMESTAMP    NOT NULL DEFAULT now(),
+        updated_at         TIMESTAMP    NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX idx_rack_read_model_warehouse_id ON rack_read_model (warehouse_id);
+    CREATE INDEX idx_rack_read_model_storage_conditions ON rack_read_model (storage_conditions);
+
+    CREATE TABLE rack_events
+    (
+        event_id      BIGSERIAL PRIMARY KEY,
+        rack_id       UUID        NOT NULL,
+        event_type    VARCHAR(50) NOT NULL,
+        event_data    JSONB       NOT NULL,
+        event_version INT         NOT NULL,
+        created_at    TIMESTAMP   NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX idx_rack_events_rack_id ON rack_events (rack_id);
+
+    CREATE TABLE shelf
+    (
+        shelf_id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        rack_id           UUID          NOT NULL REFERENCES rack_read_model (rack_id) ON DELETE CASCADE,
+        organization_id   UUID,
+        shelf_capacity_kg NUMERIC(8, 2) NOT NULL,
+        length_cm         NUMERIC(8, 2) NOT NULL,
+        width_cm          NUMERIC(8, 2) NOT NULL,
+        height_cm         NUMERIC(8, 2) NOT NULL,
+        CONSTRAINT chk_shelf_capacity CHECK (shelf_capacity_kg > 0),
+        CONSTRAINT chk_shelf_dims CHECK (length_cm > 0 AND width_cm > 0 AND height_cm > 0)
+    );
+    CREATE INDEX idx_shelf_organization_id ON shelf(organization_id);
+
+    CREATE TABLE cell
+    (
+        cell_id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        rack_id         UUID          NOT NULL REFERENCES rack_read_model (rack_id) ON DELETE CASCADE,
+        organization_id UUID,
+        max_weight_kg   NUMERIC(8, 2),
+        length_cm       NUMERIC(8, 2) NOT NULL,
+        width_cm        NUMERIC(8, 2) NOT NULL,
+        height_cm       NUMERIC(8, 2) NOT NULL,
+        CONSTRAINT chk_cell_weight CHECK (max_weight_kg IS NULL OR max_weight_kg > 0),
+        CONSTRAINT chk_cell_dims CHECK (length_cm > 0 AND width_cm > 0 AND height_cm > 0)
+    );
+    CREATE INDEX idx_cell_organization_id ON cell(organization_id);
+
+    CREATE TABLE fridge
+    (
+        rack_id           UUID PRIMARY KEY REFERENCES rack_read_model (rack_id) ON DELETE CASCADE,
+        organization_id   UUID,
+        min_temperature_c NUMERIC(5, 2),
+        max_temperature_c NUMERIC(5, 2),
+        length_cm         NUMERIC(8, 2) NOT NULL,
+        width_cm          NUMERIC(8, 2) NOT NULL,
+        height_cm         NUMERIC(8, 2) NOT NULL,
+        CONSTRAINT chk_fridge_dims CHECK (length_cm > 0 AND width_cm > 0 AND height_cm > 0),
+        CONSTRAINT chk_fridge_temp_range CHECK (min_temperature_c IS NULL OR max_temperature_c IS NULL OR min_temperature_c <= max_temperature_c)
+    );
+    CREATE INDEX idx_fridge_organization_id ON fridge(organization_id);
+
+    CREATE TABLE pallet
+    (
+        rack_id            UUID PRIMARY KEY REFERENCES rack_read_model (rack_id) ON DELETE CASCADE,
+        pallet_place_count INT           NOT NULL,
+        max_weight_kg      NUMERIC(8, 2) NOT NULL,
+        CONSTRAINT chk_pallet_places CHECK (pallet_place_count > 0),
+        CONSTRAINT chk_pallet_weight CHECK (max_weight_kg > 0)
+    );
+
+    CREATE TABLE pallet_place
+    (
+        place_id        UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        rack_id         UUID          NOT NULL REFERENCES pallet (rack_id) ON DELETE CASCADE,
+        organization_id UUID,
+        length_cm       NUMERIC(8, 2) NOT NULL,
+        width_cm        NUMERIC(8, 2) NOT NULL,
+        height_cm       NUMERIC(8, 2) NOT NULL
+    );
+    CREATE INDEX idx_pallet_place_organization_id ON pallet_place(organization_id);
+kind: ConfigMap
+metadata:
+  name: db-init-scripts

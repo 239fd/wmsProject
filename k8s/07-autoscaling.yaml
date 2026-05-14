@@ -2,7 +2,6 @@ apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: api-gateway-hpa
-  namespace: wms
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
@@ -28,7 +27,6 @@ apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: organization-service-hpa
-  namespace: wms
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
@@ -54,7 +52,6 @@ apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: product-service-hpa
-  namespace: wms
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
@@ -80,7 +77,6 @@ apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: warehouse-service-hpa
-  namespace: wms
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
@@ -106,7 +102,6 @@ apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: document-service-hpa
-  namespace: wms
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
@@ -132,7 +127,6 @@ apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: sso-service-hpa
-  namespace: wms
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
