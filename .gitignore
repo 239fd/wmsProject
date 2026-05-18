@@ -75,9 +75,12 @@ coverage/
 .parcel-cache/
 
 Thumbs.db
-.PLAN.md
-.CLAUDE.md
 .poyasn.pdf
-.req.md
+
+keystore/
+**/keystore/
+
+*.md
+!README.md
 
 

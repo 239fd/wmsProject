@@ -136,6 +136,7 @@ CREATE TABLE product_operation (
     user_id         UUID NOT NULL,
     document_id     UUID,
     supply_id       UUID,
+    session_id      UUID,
     status          VARCHAR(32) NOT NULL DEFAULT 'COMPLETED',
     operation_date  TIMESTAMP NOT NULL DEFAULT now(),
     notes           TEXT
@@ -146,6 +147,26 @@ CREATE INDEX idx_product_operation_organization_id ON product_operation(organiza
 CREATE INDEX idx_product_operation_warehouse_id ON product_operation(warehouse_id);
 CREATE INDEX idx_product_operation_operation_date ON product_operation(operation_date);
 CREATE INDEX idx_product_operation_status ON product_operation(status);
+CREATE INDEX idx_product_operation_session ON product_operation(session_id);
+
+CREATE TABLE receipt_session (
+    session_id              UUID PRIMARY KEY,
+    organization_id         UUID NOT NULL,
+    warehouse_id            UUID NOT NULL,
+    supplier_id             UUID,
+    supply_id               UUID,
+    status                  VARCHAR(32) NOT NULL DEFAULT 'PAUSED',
+    receipt_order_doc_id    UUID,
+    receipt_act_doc_id      UUID,
+    placement_list_doc_id   UUID,
+    general_notes           TEXT,
+    created_by              UUID NOT NULL,
+    created_at              TIMESTAMP NOT NULL DEFAULT now(),
+    completed_at            TIMESTAMP
+);
+
+CREATE INDEX idx_receipt_session_org_status ON receipt_session(organization_id, status);
+CREATE INDEX idx_receipt_session_warehouse ON receipt_session(warehouse_id);
 
 CREATE TABLE product_operation_events (
     event_id        BIGSERIAL PRIMARY KEY,
@@ -333,3 +354,24 @@ CREATE INDEX idx_generated_documents_type
     ON generated_documents(organization_id, document_type);
 CREATE INDEX idx_generated_documents_generated_at
     ON generated_documents(generated_at);
+
+
+CREATE TABLE erp_connection (
+    connection_id    UUID PRIMARY KEY,
+    organization_id  UUID NOT NULL,
+    aggregator       VARCHAR(32) NOT NULL,
+    name             VARCHAR(255),
+    username         VARCHAR(255),
+    password_enc     TEXT,
+    base_path        VARCHAR(512),
+    section_name     VARCHAR(255),
+    journal_name     VARCHAR(255),
+    driver_url       VARCHAR(255),
+    is_default       BOOLEAN NOT NULL DEFAULT FALSE,
+    created_by       UUID NOT NULL,
+    created_at       TIMESTAMP NOT NULL DEFAULT now(),
+    updated_at       TIMESTAMP NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_erp_connection_org_aggregator ON erp_connection(organization_id, aggregator);
+CREATE INDEX idx_erp_connection_org_default ON erp_connection(organization_id, is_default);
