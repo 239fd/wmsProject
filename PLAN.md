@@ -28,15 +28,17 @@
 | **RabbitMQ topology** | Топик-обменники per-service (`sso.exchange`, `organization.exchange`, `warehouse.exchange`, `product.exchange`). Cross-service flows: `user.director.deleted`, `organization.archived`, `warehouse.deleted`, `employee.status.changed`, `product.planned_delivery_received`. |
 | **Document audit-trail** | `GET /api/inventory/{id}/history` — лента событий ITEM_ADDED/REMOVED/REVALUED/WRITTEN_OFF из event-store. |
 
-### Что открыто
+### Что открыто (актуально на 2026-05-18)
 
-- ~~**§1.5 фундамент (P0)** — MinIO + `GeneratedDocument` registry + `DocumentNumberService` + Workflow PAUSED при приёмке~~ ✅ **DONE 2026-05-13**. Compile + unit-tests зелёные. См. §1.5 «Что появилось в коде».
-- ~~**HP-1 RPA-шаблоны** (§1) — 4 RPA-generator'а + picking-list PDF~~ ✅ **DONE 2026-05-13** (generator'ы + cleanup мёртвых case'ов release-order/shipment-order/invoice-fact/discrepancy-act). 10 типов в `DocumentController`/`PdfDocumentService`/`DocumentRpaService`.
-- ~~**HP-2 пагинация**~~ ✅ **DONE 2026-05-13** — backend (product-service 10 endpoint'ов + warehouse-service 3 endpoint'а) + фронт (5 страниц: SuppliesPage, ShipPage requests, ReceivePage history, AnalyticsPage Operations, DocumentsPage migrated на `/api/document-registry`). Также добавлен `/api/document-registry/**` в `GatewayConfig.product-api`.
-- **§1.5 P1** — Export flow: ✅ **DONE 2026-05-13** (backend + фронт). Backend: миграция V7, enums ShipmentType/DocumentLayout/DomesticDocumentKind, ShipmentRequest entity + DTO + service + saga `documentIds: List<UUID>` + compensation через MinIO removeObject. Фронт: ShipPage CreateRequestDialog — чекбокс «На экспорт» на шаге 1, conditional UI (DOMESTIC: radio ТН/ТТН + horizontal/vertical; EXPORT: dropdown валюта USD/EUR/RUB/CNY + recipientCountry + recipientGln), summary на шаге 3, yup-схема с conditional валидацией (EXPORT запрещает BYN), `shipRequestService.complete()` без `documentTypes`. Inventory tooltip (Q6) — отдельный мелкий фронт-таск, не сделан.
-- **RPA-расширение** (§2) — **2 категории**: (1) **read-only парсинг 1С** через WinAppDriver (у инсталляции пользователя нет открытого API), (2) ✅ **RPA-2 Office bot закрыт 2026-05-13** — `OfficeDocumentBot` (`document-service/rpa/`) + endpoint `POST /api/documents/office/fill`. Требует Windows + MS Office + WinAppDriver на 127.0.0.1:4723, включается `rpa.office.enabled=true`. Доступ к 1С — ожидаем.
-- **F5 дизайн-система poyasn** (§3) — материалы у пользователя для следующей сессии.
-- **I5 Redis для api-gateway** (§4) — P2 (rate-limiter на /login).
+**Закрыто в этой и прошлых сессиях** (полный список в §2.x и §4): §1.5 P0+P1, HP-1, HP-2, Frontend миграция, RPA-2 Office bot, §2.7/§2.7.bis/§2.8/§2.9-2.20/§2.24/§2.25/§2.26/§2.27, §4 I5 (Redis cache + JWT filter, включая reactive-fix 2026-05-18), миграции Flyway удалены, rate-limit снят.
+
+**Осталось открытое:**
+- **§2.6 RPA-1** — read-only парсинг 1С толстого через WinAppDriver. Доступ получен 2026-05-15 (база `utdemo`), e2e не прогонялся, требует калибровки XPath. Зависит от Windows + WinAppDriver.
+- **§2.8 ENV-BOUND** — Gmail SMTP работает через `JavaMailSender` (port 587 STARTTLS), но ISP пользователя блокирует исходящие SMTP-порты (25/465/587 ко всем mail-провайдерам, проверено 2026-05-18). Решение: VPN на машине отправителя или MailHog-fallback. Защита: либо VPN в аудитории, либо локальный MailHog как demo-канал.
+- **§2.21** CORS gateway, **§2.22** OAuth secrets, **§2.23** SSO smoke-test — отложены пользователем.
+- **§2.28** Keystore ротация — приватный ключ JWT был закоммичен в git history (`keystore/jwt-private.key`). Сейчас untracked + gitignored (2026-05-18, см. §2.26), но в истории остался. Полная очистка требует `git filter-repo` или ротации keypair.
+- **§4.2 End-to-end docker-compose** — обязательная проверка перед защитой.
+- **§5.1** Test coverage 51.7% → 80% — отложено.
 
 ### Где какой код
 
@@ -82,7 +84,7 @@ k8s/{00..09}-*.yaml                                             — Kubernetes m
 
 ### Готовность
 
-~95% backend, ~95% frontend (на 2026-05-12). До защиты: **§1.5 P0 (MinIO + DocNumber + Workflow PAUSED) + HP-1 + HP-2 + §2 RPA-2 (Office bot) + RPA-1 (1С парсинг)**. F5 design — параллельно.
+~95% backend, ~95% frontend (на 2026-05-12). До защиты: **§1.5 P0 (MinIO + DocNumber + Workflow PAUSED) + HP-1 + HP-2 + §2 RPA-2 (Office bot) + RPA-1 (1С парсинг)**.
 
 ---
 
@@ -138,7 +140,7 @@ k8s/{00..09}-*.yaml                                             — Kubernetes m
 
 5. **MockErpController** (`backend/document-service/src/main/java/by/bsuir/documentservice/controller/MockErpController.java`) — **dev-fallback**: тестовая заглушка ERP, отдаёт login-форму + HTML-таблицу `<table id="deliveries-table">`. Используется существующим `RpaHtmlExtractorImpl` (Jsoup) и `ApiExtractorImpl` (REST) для разработки без реального 1С. В production-режиме (RPA-1 через WinAppDriver на толстом 1С) не задействован. Не часть document-service по смыслу, переедет в отдельный модуль после защиты.
 
-6. **Текущее coverage:** **525 backend-тестов**, JaCoCo ≥50% во всех 5 сервисах. **Не ронять** — при изменениях смотри что новые методы покрыты или существующие тесты остались валидны. Запуск: `gradle allTestWithCoverage` (без Docker), `gradle allIntegrationTest` (с Docker).
+6. **Текущее coverage** (2026-05-15): **473 backend-теста** (`gradle allTestWithCoverage` без Docker). JaCoCo aggregate: **51.7% INSTRUCTION / 40% BRANCH** после exclusions, добавленных 2026-05-15 (см. `backend/build.gradle ext.jacocoExcludes`): `config/dto/model.entity/model.event/model.enums/rpa/exception/client/*Application`. **80% не достигнуто** — это потолок при подходе «только exclusions» (см. §8.1). До 80% нужно ~150-170 новых тестов на service+controller — отложено. Per-service `jacocoTestCoverageVerification.minimum = 0.50` — текущее условие пройдено. **Не ронять.** Запуск: `gradle allTestWithCoverage` (без Docker), `gradle allIntegrationTest` (с Docker).
 
 7. **Backend conventions** (полностью в `backend/CLAUDE.md`):
    - Java records для DTO, Russian-language `@DisplayName` в тестах.
@@ -157,6 +159,126 @@ k8s/{00..09}-*.yaml                                             — Kubernetes m
 9. **PDF cyrillic:** `document-service` использует **DejaVuSans.ttf** (`src/main/resources/fonts/`). PDF generate-методы в `PdfDocumentService` корректно рендерят кириллицу — НЕ возвращайте `Standard14Fonts.HELVETICA`, иначе всё развалится на любом русском тексте. После cleanup §1 в `PdfDocumentService` должно остаться **10 generate-методов** (под 10 типов после удаления `release-order`/`shipment-order`/`invoice-fact`/`discrepancy-act`).
 
 10. **Memory feedback (важно):** no comments в коде, no tests без явного запроса, no commits без явного запроса, backend first приоритет, дата в PLAN.md в Russian формате.
+
+---
+
+## 0.4 Роли — функции и БП (трекинг)
+
+> Активный трекер: что работает, что сломано (со ссылками на баги в §2.x), что в работе, что не реализовано.
+> Легенда: ✅ работает · ❌ сломано · ⏳ в работе / частично · ⬜ не начато · ⛔ scope-out (зафиксировано не делать)
+
+### Древо функций по ролям
+
+```
+WMS
+│
+├── 🔐 Общее (auth, профиль, инфра) — до всех ролей
+│   ├── ✅ Регистрация директора + создание организации
+│   ├── ✅ Регистрация по invitation-token (email-link)
+│   ├── ✅ Login (JWT RS256, 4h access + 30d refresh в Redis)
+│   ├── ✅ Logout (revoke refresh + login_audit)
+│   ├── ✅ Активные сессии (по login_audit hash)
+│   ├── ✅ Смена пароля
+│   ├── ✅ OAuth Yandex / Google (callback URL через @Value)
+│   ├── ⏳ Email-инвайт (URL фикс + Resend HTTPS + .env wiring) — но Resend sandbox только свой email → §2.8
+│   ├── ✅ JWT issuer вынесен в @Value
+│   ├── ❌ CORS в SSO + gateway без CORS          → §2.21
+│   ├── ❌ OAuth secrets закоммичены в репо       → §2.22
+│   └── ⛔ Четвёртая роль (STOREKEEPER)
+│
+├── 👷 WORKER (кладовщик = МОЛ, UC-1..UC-5)
+│   ├── Приёмка
+│   │   ├── ✅ Открыть ReceiptSession (одна поставка = одна сессия = один акт)
+│   │   ├── ✅ Принять без замечаний → receipt-order + receipt-act (RTF)
+│   │   ├── ✅ Зафиксировать расхождение → receipt-act (xls) с типами SHORTAGE / SURPLUS / DEFECT / MISGRADE / OTHER
+│   │   ├── ✅ Placement по ячейкам (FEFO / адресация)
+│   │   └── ✅ Inventory unit_sku (auto INV-XXXXXXXX) + batch_id (auto-create по batchNumber)
+│   ├── Отгрузка
+│   │   ├── ✅ Pick по штрихкоду / unit_sku             с fallback batchId IS NULL
+│   │   ├── ✅ Прогресс заявки (saga state)
+│   │   └── ✅ Лист подбора (picking-list PDF)
+│   ├── Инвентаризация
+│   │   ├── ✅ Открыть session (tooltip НСБУ № 126)
+│   │   ├── ✅ Внести фактические остатки (count)
+│   │   ├── ✅ Завершить session → adjustments + inventory-report
+│   │   └── ✅ История расхождений
+│   ├── Перемещение
+│   │   └── ✅ Transfer между warehouse / cell (operation TRANSFER)
+│   └── Просмотр
+│       ├── ✅ Текущий Inventory (paginated)
+│       ├── ✅ История операций (paginated)
+│       └── ✅ Lookup партий
+│
+├── 🧾 ACCOUNTANT (бухгалтер, UC-11..UC-16)
+│   ├── Переоценка
+│   │   └── ✅ Revaluate → акт переоценки на Map.of
+│   ├── Списание
+│   │   └── ✅ Write-off с причиной, основанием, комиссией → write-off-act
+│   ├── Документы
+│   │   ├── ✅ Реестр (paginated, фильтр по типу) — /api/document-registry
+│   │   ├── ✅ Скачать (inline bytes) / Presigned MinIO URL
+│   │   └── ✅ Документы по операции
+│   ├── Аналитика
+│   │   ├── ✅ ABC-анализ (cron 02:00, abc_class A/B/C)
+│   │   ├── ✅ Динамика операций (по периодам)
+│   │   ├── ✅ Аналитика остатков (по складу / товару)
+│   │   ├── ✅ Marked-for-write-off (paginated)
+│   │   └── ✅ ABC-блок в PDF-отчёте показывает кол-во товаров
+│   └── ⛔ Скоропортящиеся товары (Q5)
+│
+└── 👔 DIRECTOR (заведующий складом, UC-6..UC-10)
+    ├── Управление складом
+    │   ├── ✅ CRUD склады
+    │   ├── ✅ CRUD стеллажи (SHELF / CELL / FRIDGE / PALLET)
+    │   └── ✅ CRUD ячейки + pallet places
+    ├── Управление организацией / сотрудниками
+    │   ├── ✅ CRUD сотрудники (status, block / unblock, delete)
+    │   ├── ✅ Создание invitation token + ссылка
+    │   ├── ⏳ Email отправка инвайта (только на свой email из-за Resend sandbox → §2.8)
+    │   └── ✅ Employee analytics (tenure-only, ops-stats удалены)
+    ├── Справочники
+    │   ├── ✅ CRUD поставщики (paginated)
+    │   ├── ✅ CRUD товары + категории
+    │   └── ✅ CRUD партии (batches)
+    ├── Поставки и отгрузки
+    │   ├── ✅ Список Supply (paginated)
+    │   ├── ✅ Список ShipmentRequest (paginated)
+    │   ├── ✅ Создать ShipmentRequest — DOMESTIC (ТН / ТТН + horizontal / vertical)
+    │   └── ✅ Создать ShipmentRequest — EXPORT (ТН + CMR + invoice; USD / EUR / RUB / CNY)
+    ├── ERP-интеграция (плановые поставки)
+    │   ├── ✅ ApiExtractor (REST mock) — dev-fallback
+    │   ├── ✅ RpaHtmlExtractor (Jsoup mock) — dev-fallback
+    │   ├── ⏳ OneCWinAppExtractor (RPA-1, WinAppDriver на 1С толстом) — ждёт E2E калибровки
+    │   ├── ✅ ApiExtractor login (form-encoded) + default mode=onec
+    │   ├── ✅ Credentials ERP в БД (AES-encrypted, CRUD + UI)
+    │   └── ✅ planned_deliveries → RabbitMQ → продукт-сервис
+    └── Системные настройки
+        ├── ✅ RPA mode toggle (auto / rpa) — X-Generation-Mode header
+        └── ✅ OfficeBot health-check
+
+⛔ Не делаем (scope-out, зафиксировано): ЭТТН/ЭТН (Q9), perishable + 24h таймер (Q5), SMTP-уведомление поставщику при расхождении, ручное утверждение DIRECTOR'ом receipt-act (кладовщик-МОЛ закрывает сам), 4-я роль.
+```
+
+### Сквозные БП (end-to-end happy path)
+
+| # | БП | Шаги | Документы | Статус |
+|---|---|---|---|---|
+| BP-1 | **Приёмка** | DIRECTOR создаёт Supply → WORKER `POST /api/receipt-sessions` → размещение по ячейкам → complete / discrepancy | receipt-order (ПО) + receipt-act (АП) | ✅ |
+| BP-2 | **Отгрузка DOMESTIC** | DIRECTOR создаёт ShipmentRequest (ТН / ТТН) → WORKER pick → saga STOCK_RESERVATION→STAGING→DOC_GEN→INV→OP | transport-note (ТН) или waybill (ТТН) + picking-list (ЛП) | ✅ |
+| BP-3 | **Отгрузка EXPORT** | DIRECTOR создаёт ShipmentRequest (export, currency) → saga (тот же) → пакет 3 документов | ТН + CMR + invoice (И) + picking-list (ЛП) | ✅ |
+| BP-4 | **Переоценка** | ACCOUNTANT revaluate → InventoryEvent REVALUED | revaluation-act (ПЕР) | ✅ |
+| BP-5 | **Списание** | ACCOUNTANT writeOff + комиссия → InventoryEvent WRITTEN_OFF | write-off-act (СПС) | ✅ |
+| BP-6 | **Инвентаризация** | WORKER startSession → внести count → completeSession → adjustments | inventory-report (ИНВ) | ✅ |
+| BP-7 | **Перемещение** | WORKER transfer → operation TRANSFER + 2 InventoryEvents | — | ✅ |
+| BP-8 | **Регистрация сотрудника** | DIRECTOR invite → email-link → invitee `/register/invitation` → SSO addEmployee | — | ⏳ Resend sandbox only |
+| BP-9 | **ERP-импорт поставок** | cron 03:00 (или manual `POST /run`) → extractor → planned_deliveries → RabbitMQ. Credentials берутся из БД (`erp_connection`, AES-зашифрованы) либо inline body | — | ✅ (credentials wiring сделан; реальный override в extractor'ах — TODO в §2.7.bis MVP-limitation) |
+
+### Что использовать этот раздел как трэкер
+
+- Поле статус (✅/❌/⏳/⬜) меняется по мере работы — это **источник правды до защиты**.
+- Каждое `❌` обязано иметь ссылку на параграф §2.x с разверткой бага.
+- Когда баг закрыт — заменить `❌ ... → §2.x` на `✅` и зачеркнуть §2.x в роадмапе (§6).
+- Когда добавляется новая функция в коде — обязательно отметить в этом дереве.
 
 ---
 
@@ -318,71 +440,11 @@ Acceptance в `BACKEND_HP_BACKLOG.md §HP-2`.
 
 > **СТАТУС НА 2026-05-13.** Фундамент §1.5 P0 закрыт: §1.5.D ✅, §1.5.A (compose + entity + registry + endpoints) ✅, §1.5.A (stateless document-service) ✅, §1.5.B (status PAUSED + всегда-акт + 3 endpoint'а complete/discrepancy/approve) ✅. Compile + unit-tests зелёные на обоих сервисах. Что НЕ сделано в этом sprint'е: §1.5.C export flow (P1), §1.5.E inventory tooltip (P1, фронт), HP-1 generator'ы новых шаблонов, миграция фронта на `/api/document-registry`, RPA-канал документа `receipt-act` использует один шаблон (PDF) — выбор между `Акт приемки.RTF` (без расхождений) и `Акт расхождения.xls` (с расхождениями) сделаем в HP-1 при подключении POI-шаблонов.
 
-### Что появилось в коде (для контекста новых сессий)
+### Wiring справка для §1.5 (DONE)
 
-**Миграции product-service (Flyway):**
-- `V4__document_counters.sql` — таблица `document_counters (organization_id, document_type, year, counter)` для DocumentNumberService.
-- `V5__generated_documents.sql` — таблица `generated_documents` для registry.
-- `V6__operation_status.sql` — колонка `status` в `product_operation` (default `COMPLETED`, для существующих строк).
+Полная wiring-карта документной подсистемы (MinIO + GeneratedDocument + DocumentNumberService + DocumentRegistryService + 10 типов + RPA-канал) — в memory `project_wms_subsystems`. Schema в `sql-scripts/productDB.sql` (Flyway удалён 2026-05-17, см. §4.1).
 
-DDL также прописан в `sql-scripts/productDB.sql` (для первого старта пустой БД через docker-compose).
-
-**Новые классы product-service:**
-- `model.entity.DocumentCounter` + `DocumentCounterId` (composite PK).
-- `model.entity.GeneratedDocument`.
-- `model.enums.OperationStatus { PENDING, RECEIVED, PAUSED, COMPLETED, CANCELLED }`.
-- `repository.DocumentCounterRepository` — `findForUpdate` с `@Lock(PESSIMISTIC_WRITE)`.
-- `repository.GeneratedDocumentRepository`.
-- `service.DocumentNumberService.next(orgId, type)` → `{ПРЕФИКС}-{YYYY}-{NNNNN}`. Префиксы: ПО, АП, ТТН, ТН, CMR, ИНВ, ПЕР, СПС, И, ЛП.
-- `service.DocumentRegistryService.register(opId, type, payload, orgId, userId) → GeneratedDocument`. Внутри: `DocumentClient.fetchPdf` → MinIO `putObject` → `repository.save`. Также есть `downloadBytes(...)` и `presignedUrl(...)`.
-- `controller.DocumentRegistryController` (префикс `/api/document-registry`):
-  - `GET /` — paginated список (фильтр по `?type=`).
-  - `GET /{id}` — метаданные.
-  - `GET /{id}/download` — PDF bytes (inline).
-  - `GET /{id}/url` — presigned URL (TTL по `minio.presigned-url-ttl-minutes`).
-  - `GET /by-operation/{operationId}` — все документы по операции.
-- `config.MinioConfig` — `MinioClient` bean, `@PostConstruct` создаёт bucket если его нет.
-- `dto.request.DiscrepancyRequest` + nested `DiscrepancyItem`.
-
-**Изменения в product-service существующих классов:**
-- `client.DocumentClient` — старые методы `generateReceiptOrder` / `generateWriteOffAct` / `generateRevaluationAct` (возвращали UUID) **удалены**. Остался один `fetchPdf(type, payload, orgId) → byte[]`.
-- `entity.ProductOperation` — добавлено поле `status: OperationStatus`. Default в `@PrePersist` = `COMPLETED` (backward-compat). `service.ProductOperationService.receiveProduct` явно ставит `PAUSED`.
-- `repository.ProductOperationRepository` — добавлен `findByOperationIdAndOrganizationId(...)`.
-- `controller.OperationController`:
-  - `receiveProduct` теперь регистрирует **два** документа (`receipt-order` + `receipt-act` с пустыми `discrepancies`), статус операции `PAUSED`, ответ содержит `receiptOrderId/Number` и `receiptActId/Number`.
-  - `revaluate` / `writeOff` мигрированы на `DocumentRegistryService.register`.
-  - Новые endpoint'ы:
-    - `POST /api/operations/{id}/complete` (WORKER) — `PAUSED → COMPLETED`.
-    - `POST /api/operations/{id}/discrepancy` (WORKER) — регистрирует акт о расхождении, статус остаётся `PAUSED`.
-    - `POST /api/operations/{id}/approve` (DIRECTOR) — `PAUSED → COMPLETED`.
-
-**docker-compose.yml:**
-- Сервис `minio` (ports 9000 API, 9001 console; creds `wmsadmin / wmsadmin12345`).
-- Сервис `minio-init` — на старте создаёт bucket `wms-documents` через `mc`.
-- Том `minio_data`.
-
-**application.properties (product-service):**
-```properties
-minio.endpoint=http://localhost:9000
-minio.access-key=wmsadmin
-minio.secret-key=wmsadmin12345
-minio.bucket=wms-documents
-minio.presigned-url-ttl-minutes=15
-```
-
-**build.gradle (product-service):** добавлена `implementation 'io.minio:minio:8.5.10'`.
-
-**document-service stateless:**
-- `DocumentService.records` (ConcurrentHashMap) **удалён**. Метод `generate(type, data, orgId, format)` возвращает `byte[]` напрямую.
-- `DocumentController` endpoints теперь возвращают `ResponseEntity<byte[]>` с `application/pdf` (или xls/docx по `?format=`).
-- Удалены endpoint'ы `GET /api/documents/{id}` (получение по UUID), `GET /api/documents/{id}/metadata`, `GET /api/documents` (paginated) — функционал переехал в product-service `/api/document-registry`.
-- Удалены endpoint'ы для `release-order`, `shipment-order`, `invoice-fact`, `discrepancy-act` (вычеркнуты ещё на этапе planning §0.1 Q1).
-- Удалены тесты `DocumentControllerTest`, `DocumentServiceTest`, `DocumentControllerIntegrationTest` (тестировали удалённый in-memory контракт). `PdfDocumentServiceParameterizedTest` оставлен — он тестирует PDF-генерацию напрямую, существующие методы `PdfDocumentService` пока на месте (будут почищены в HP-1).
-
-**Тесты, переписанные под новый контракт:**
-- `DocumentClientTest` — теперь тестирует `fetchPdf`.
-- `OperationControllerTest` — мок на `DocumentRegistryService`.
-- `ReceiveOperationContainerTest`, `WriteOffOperationContainerTest`, `ShipSagaFullContainerTest`, `ShipmentRequestContainerTest` — `@MockBean DocumentClient` → `@MockBean DocumentRegistryService`.
+> Примечание для новой сессии: ниже в §1.5.A/B/C/D описаны **исторические TODO** — все DONE. Acceptance secs полезны для контекста, реализация — в коде + git log.
 
 ### Детали (✅ сделано, ⏳ осталось)
 
@@ -548,7 +610,7 @@ implementation 'io.minio:minio:8.5.10'
 
 ---
 
-## 2. RPA-расширение ❌ PENDING
+## 2. RPA-расширение ⏳ PARTIAL (RPA-2 ✅, RPA-1 ждёт E2E)
 
 **Контекст.** Зафиксировано 2026-05-12: RPA-блок включает **два независимых вида**:
 1. **RPA-1: чтение данных из локального 1С** (плановые поставки и т.п.).
@@ -864,47 +926,727 @@ document-service/src/main/java/by/bsuir/documentservice/rpa/
 - ✅ **RPA-2**: `POST /api/documents/office/fill` — бот реально открывает локальный MS Word/Excel, заполняет placeholder'ы из payload, сохраняет PDF. На защите запуск с `rpa.office.headless=false` — комиссия видит весь процесс.
 - В пояснительной записке — скриншоты работы каждого бота, объяснение классификации RPA: server-side integration (POI, PDFBox) vs desktop UI automation (WinAppDriver на 1С и Office).
 
-### 2.6 План на следующую сессию (порядок)
+### 2.6 RPA-1: E2E прогон OneCWinAppExtractorImpl ⏳ PENDING
 
-1. **`OfficeDocumentBot`** (RPA-2) — локальный MS Word/Excel через WinAppDriver. Не зависит от 1С. Установить WinAppDriver, прокалибровать селекторы Excel (`NameBox`, `Ribbon`). ~1-1.5 дня. JACOB-резерв ещё +0.5 дня если потребуется. **Стартуем с этого.**
-2. **`OneCWinAppExtractorImpl`** (RPA-1) — после получения доступа к 1С толстому клиенту. ~1.5-2 дня (1-1.5 дня код + 0.5-1 дня калибровка селекторов через Accessibility Insights). Сильно зависит от конфигурации 1С пользователя.
+Код `OneCWinAppExtractorImpl` написан в прошлых сессиях. Доступ к базе `utdemo` получен 2026-05-15. **Не прогонялся end-to-end** из-за нескольких блокеров (теперь все закрыты в session 2026-05-16/17, см. §2.7). Осталось:
 
-**Итого RPA-блок:** 2.5-3.5 дня при последовательной работе.
+1. Поднять WinAppDriver (`http://127.0.0.1:4723`) на Windows + открыть базу 1С `utdemo`.
+2. Через UI запустить `POST /api/erp-extractor/run?mode=onec` с body `{connectionId}` (см. §2.7.bis).
+3. По логам `1C-RPA: найдено окон-кандидатов: N` / `найдено строк: M` калибровать XPath в `OneCWinAppExtractorImpl.readJournalTable` через **Accessibility Insights for Windows**.
+4. Проверить маппинг колонок `0-4` (`externalId / expectedDate / supplierName / productName / expectedQuantity`).
 
----
+**Оценка:** 0.5-1 день (зависит от того насколько журнал `Заказы поставщикам` в `utdemo` соответствует ожиданиям бота).
 
-## 3. F5. Дизайн-система poyasn (Frontend, 1-2 дня) — P1
+**RPA-2 Office bot уже закрыт** (см. memory `project_rpa_office_done` + §6 дорожная карта).
 
-Текущая палитра в `client/src/config/theme.js` не совпадает с poyasn.
+### 2.7 Открытые баги извлечения / отправки сообщений ✅ DONE 2026-05-16
 
-| Параметр | Сейчас | Должно быть |
-|---|---|---|
-| `primary.main` | `#005FF9` | `#1976D2` |
-| `secondary.main` | `#FFD600` | `#FFE673` |
-| `error.main` | — | `#D32F2F` |
-| `warning.main` | — | `#ED6C02` |
-| `success.main` | — | `#2E7D32` |
-| `fontFamily` | `Manrope` | `Gantari, Jost, Arial, sans-serif` |
+**Контекст.** Доступ к 1С получен 2026-05-15 (база `utdemo`, конфигурация типовая, attach-mode на запущенное окно). При первом ручном прогоне `POST /api/erp-extractor/run` (без mode-параметра) запрос ушёл в режим `api` и упал на mock-erp с `MissingServletRequestParameterException: 'username'`. RPA-1 ветка `onec` пока **не проверена end-to-end**.
 
-**Шаги:**
-- `npm install @fontsource/gantari @fontsource/jost` + импорт в `index.js`.
-- Миграция `theme.js`, иерархия H1-H4.
-- Прогнать 22 страницы: `variant="h5/h6"` → консистентные `h2/h3`.
+**Что чинить:**
 
-Материалы (фирменный стиль) пользователь подгружает к следующей сессии.
+1. **Извлечение данных — переключить дефолт на `onec`.** Сейчас:
+   - `ErpExtractorJob.extractionMode` дефолтится `${erp.extraction.mode:rpa}` → попадает в `RpaHtmlExtractorImpl` (Jsoup на mock-erp). Если параметр `mode` не передан в `POST /run` — экстракшн идёт мимо 1С.
+   - `client/src/pages/SuppliesPage.js:134` — кнопка «Импорт из ERP» **хардкодит** `erpExtractorService.run('api')`. Поменять на `'onec'` (или сделать селектор).
+   - `client/src/pages/ErpExtractorPage.js` — проверить что в выпадающем списке режима есть опция `onec` (сейчас, вероятно, только `api`/`rpa`).
+   - Сменить дефолт `erp.extraction.mode` на `onec` в `product-service/src/main/resources/application.properties` (либо оставить `rpa` но фронт всегда явно слать `onec`).
 
----
+2. **Отправка сообщений / mock-erp login — баг ApiExtractorImpl.** Не относится к 1С напрямую, но всплыло сейчас и блокирует fallback-канал:
+   - `ApiExtractorImpl.login` (`backend/product-service/src/main/java/by/bsuir/productservice/rpa/ApiExtractorImpl.java:64-75`) шлёт `Map<String,String> {username, password}` в **body** через `restTemplate.postForObject(url, credentials, Map.class)`.
+   - `MockErpController.login` (document-service) ожидает `@RequestParam username/password` — то есть **query string**, не body. Отсюда 400 `Required parameter 'username' is not present`.
+   - **Fix:** в `ApiExtractorImpl.login` собрать URL с query-параметрами: `String url = erpBaseUrl + "/login?username={u}&password={p}"` + `restTemplate.postForObject(url, null, Map.class, erpUsername, erpPassword)`. ИЛИ переписать `MockErpController.login` принимать `@RequestBody Map<String,String>` (но тогда сломаются ручные curl-проверки). Первый вариант предпочтительнее — bug на стороне клиента.
 
-## 4. I5. Redis для api-gateway (P2, 0.5-1 день)
+3. **Проверка end-to-end RPA-1** (после 1+2):
+   - Запустить WinAppDriver, открыть 1С `utdemo`, залогиниться.
+   - `POST http://localhost:8765/api/erp-extractor/run?mode=onec`.
+   - В логах ожидать `1C-RPA: найдено окон-кандидатов: 1`, `1C-RPA: открыт журнал «Закупки → Заказы поставщикам»`, `1C-RPA: найдено строк: N`.
+   - Если строки не найдены — калибровать XPath в `OneCWinAppExtractorImpl.readJournalTable` через **Accessibility Insights for Windows** на реальном окне 1С. Сейчас три fallback'а (`@LocalizedControlType='элемент таблицы'` / `//DataItem` / `//Custom[contains(@Name,'.')]`), допилить четвёртый по факту.
+   - Проверить маппинг колонок 0-4 (`externalId / expectedDate / supplierName / productName / expectedQuantity`) — порядок в журнале «Заказы поставщикам» может отличаться от ожиданий бота.
 
-В коде: Caffeine-конфиг **мёртвый** (нет `@Cacheable`); реальный in-memory кеш — private-поля `cachedPublicKey` + `lastKeyFetchTime` в `JwtAuthenticationFilter`. Redis уже подключён, `RedisRateLimiter` задекларирован, но не применён ни к одному маршруту.
+**Оценка:** 0.5 дня — фикс 1 (фронт + дефолт) + фикс 2 (ApiExtractorImpl.login) + end-to-end прогон. Калибровка XPath/колонок — отдельно, по факту первого запуска.
+
+**Frontend частично закрыт 2026-05-15** (`ErpExtractorPage.js`):
+- Двухшаговая форма: шаг 1 — выбор агрегатора ERP (1С / Mock API / Mock RPA), шаг 2 — credentials (для 1С: username, password, basePath, sectionName, journalName).
+- `erpExtractorService.run(mode, connection)` принимает body с credentials (раньше только query `?mode=`).
+- В UI Alert предупреждает что бэкенд пока игнорирует body credentials — параметры читаются из `rpa.properties`.
+
+**РЕАЛИЗОВАНО 2026-05-16:**
+- `ApiExtractorImpl.login` — переписан с JSON body на `application/x-www-form-urlencoded` через `MultiValueMap` + `HttpEntity`. Теперь Spring `@RequestParam` в `MockErpController.login` корректно парсит креды. ApiExtractor-канал работает end-to-end.
+- `ErpExtractorJob.extractionMode` — default `@Value("${erp.extraction.mode:rpa}")` → `:onec`. Плановый прогон (cron 03:00) теперь идёт через 1С, а не через mock-erp.
+- `client/src/services/erpExtractorService.js` — default параметра `run(mode = 'api')` → `run(mode = 'onec')`. Frontend в `ExtractDataDialog` уже корректно выбирает агрегатор (default `onec` в state), пользователь явно подтверждает.
+- Note: `SuppliesPage.js` хардкод `'api'` который упомянут в issue — оказался устаревшим. Фактический хук — `ExtractDataDialog`, который имеет dropdown с тремя опциями и default `'onec'`. PLAN.md был неточен в исходной формулировке.
+- Compile + `:product-service:test` (186 тестов) зелёные. E2E прогон через 1С ждёт калибровки XPath (§2.6).
+
+### 2.7.bis Backend: credentials ERP в БД, а не в properties ✅ DONE 2026-05-17 (MVP)
+
+**Сейчас.** Параметры подключения к 1С (username, password, basePath, sectionName, journalName) хардкодированы в `backend/product-service/src/main/resources/rpa.properties`. Это:
+- Один набор на весь сервис — нельзя иметь разные конфиги per-organization / per-user.
+- Пароль в plain text в репозитории.
+- При смене реквизитов нужен deploy.
 
 **Что делать:**
-- (a) Удалить мёртвый Caffeine-конфиг из `application.properties` (2 строки).
-- (b) Распределить public-key cache: `ReactiveStringRedisTemplate` + ключ `gw:jwt-public-key`, TTL 1h.
-- (c) Активировать `RequestRateLimiter` на `/api/auth/login`, `/api/auth/refresh` — закрывает rate-limiting (§5 п.7).
+1. Миграция `V9__erp_connection.sql` (`product_service`) — таблица `erp_connection`:
+   ```sql
+   CREATE TABLE erp_connection (
+       id              UUID PRIMARY KEY,
+       organization_id UUID NOT NULL,
+       aggregator      VARCHAR(32) NOT NULL,    -- 'onec' / 'api' / 'rpa'
+       name            VARCHAR(255),            -- человекочитаемое имя (опционально)
+       username        VARCHAR(255),
+       password_enc    TEXT,                    -- AES-encrypted (по примеру SSOService.EncryptedStringConverter)
+       base_path       VARCHAR(512),
+       section_name    VARCHAR(255),
+       journal_name    VARCHAR(255),
+       driver_url      VARCHAR(255),            -- override default 127.0.0.1:4723
+       is_default      BOOLEAN DEFAULT FALSE,
+       created_by      UUID NOT NULL,
+       created_at      TIMESTAMP NOT NULL DEFAULT now(),
+       updated_at      TIMESTAMP NOT NULL DEFAULT now()
+   );
+   CREATE INDEX idx_erp_connection_org_agg ON erp_connection(organization_id, aggregator);
+   ```
+2. Entity `ErpConnection` + `ErpConnectionRepository`.
+3. AES-converter (можно скопировать `EncryptedStringConverter` из SSOService, либо вынести в shared utility).
+4. Service `ErpConnectionService` (CRUD): `create/update/delete/findByOrgAndAggregator/findDefault`.
+5. REST endpoints (только DIRECTOR/ACCOUNTANT):
+   - `POST /api/erp-connections` — создать
+   - `GET /api/erp-connections` — список по `organization_id`
+   - `PUT /api/erp-connections/{id}` — обновить
+   - `DELETE /api/erp-connections/{id}` — удалить
+   - `PATCH /api/erp-connections/{id}/default` — set default
+6. **Расширить `POST /api/erp-extractor/run`** — принимать `@RequestBody Optional<ErpConnectionRequest>` (приоритет: body → default из БД → fallback на `rpa.properties` для backward compat).
+7. `OneCWinAppExtractorImpl` — конструктор/builder принимающий `ErpConnectionParams` вместо `@Value("${rpa.onec...}")`. `RpaProperties` остаётся как fallback default.
+8. `ErpExtractorJob.runManually(mode, connection)` — пробрасывает connection в extractor.
+9. Шифрование `password_enc` через `${APP_DB_ENCRYPTION_KEY}` (env var, как в SSOService для `login_audit.ip`).
+10. UI: на ErpExtractorPage добавить кнопку «Сохранить как подключение» в форму credentials → CRUD через `/api/erp-connections`. Уже введённая форма (2026-05-15) станет «использовать существующее подключение или ввести разовые credentials».
 
-Самое демонстративное для защиты — **(c)**: «1100 запросов на /login за минуту → 429».
+**Acceptance:**
+- 1С credentials хранятся в БД (encrypted password), per-organization.
+- `rpa.properties` секция `rpa.onec.*` либо удалена, либо помечена как «dev-fallback default».
+- При запуске извлечения из UI используется выбранное подключение, без необходимости править properties и пересобирать.
+
+**Оценка:** 1-1.5 дня.
+
+**РЕАЛИЗОВАНО 2026-05-17 (MVP):**
+- **Backend:** таблица `erp_connection` в `productDB.sql` (AES-encrypted `password_enc`), entity + repo + service + REST controller `/api/erp-connections` (CRUD + `PATCH /default`, доступ DIRECTOR/ACCOUNTANT). `EncryptedStringConverter` (AES-256-ECB через `APP_DB_ENCRYPTION_KEY`). `ErpExtractorController.runExtraction` принимает body с `connectionId` или inline-creds, резолвит в `ErpConnectionParams` и передаёт в `ErpExtractorJob.runManually(mode, params)`.
+- **Frontend:** `erpConnectionService.js` + `ERP_CONNECTIONS` endpoints + dropdown сохранённых подключений в `ExtractDataDialog` + чекбокс «Сохранить как подключение».
+- **Env-var:** `APP_DB_ENCRYPTION_KEY` в `.env` (генерить `openssl rand -base64 32`). Без ключа AES в pass-through режиме с warning.
+- **Известное ограничение MVP:** существующие 3 extractor'а (`OneCWinAppExtractorImpl`/`Api`/`Rpa`) пока используют `@Value` из properties и **не учитывают** передаваемые params — default-метод в interface игнорирует. CRUD + UI работают, override в extractor'ах — TODO.
+
+---
+
+### 2.8 Разобраться с почтой (отправка приглашений) ⏳ PARTIAL 2026-05-17
+
+**Контекст.** `organization-service` использует SMTP через `mail.gmail.com` (`spring.mail.host=smtp.gmail.com`) для отправки приглашений сотрудникам в организацию. Креды и app-password лежат в `backend/organization-service/src/main/resources/application.properties`. Поток: DIRECTOR создаёт `Invitation` → `InvitationService` шлёт email со ссылкой `/register/invitation?token={uuid}` → invitee кликает → попадает на `RegisterByInvitationPage` → `POST /api/auth/register/invitation` валидирует токен через `GET /api/invitations/validate?token=...`.
+
+Заявка от пользователя 2026-05-15: «разобраться с почтой» — текущее состояние отправки писем неизвестно (письма не доходят / SMTP не отвечает / app-password устарел).
+
+**Что проверить:**
+
+1. **SMTP-креды актуальны?**
+   - `organization-service/src/main/resources/application.properties` → `spring.mail.username` / `spring.mail.password` (для Gmail — app password 16 символов, не пароль аккаунта).
+   - Если Google account имеет 2FA — обычный пароль не работает, нужен app-password (Google → Security → App passwords).
+   - Если 2FA выключена + «Less secure apps» — больше не поддерживается Gmail с 2022, обязательно app-password.
+
+2. **`InvitationService` / `EmailService` реально отправляет?**
+   - Найти класс отвечающий за отправку (видимо `organization-service/src/main/java/by/bsuir/organizationservice/service/EmailService.java` или внутри `InvitationService`).
+   - Логи `organization-service` при создании invitation: ожидать `JavaMailSender.send(...)` без ошибок. Если `MailAuthenticationException` → wrong creds; `MailSendException` с timeout → host/port/SSL неверен.
+   - SMTP host `smtp.gmail.com`, порт `587` (STARTTLS) или `465` (SSL). Проверить `spring.mail.properties.mail.smtp.*`.
+
+3. **URL invitation в письме корректный?**
+   - Письмо шлёт ссылку вида `${app.frontend-url}/register/invitation?token={token}`. Если `app.frontend-url` = `http://localhost:3000` — работает только локально; для прода/staging нужно реальное доменное имя.
+   - `client/src/pages/RegisterByInvitationPage.js` принимает `?token=` query param.
+
+4. **`InvitationCodeScheduler` (cron hourly):**
+   - Помечает истёкшие коды `is_active=false`. Проверить что cron реально срабатывает (`@Scheduled(cron="0 0 * * * *")` в `organizationservice/scheduler/`).
+   - Если scheduler не работает — старые invitation остаются valid → security issue.
+
+5. **OAuth invitation flow.**
+   - При регистрации через OAuth (Google/Yandex) email из OAuth провайдера должен совпадать с email в `Invitation`. Backend (`OAuthService.completeRegistration` в SSO) бросает ошибку «Email mismatch» при расхождении.
+   - Проверить что error message доходит до фронта понятным текстом.
+
+**Acceptance:**
+- Письмо с приглашением приходит на реальный email-ящик (тест на ваш `pavelkarliuk1@gmail.com`).
+- Ссылка из письма открывает страницу регистрации, токен валидируется, регистрация проходит до конца.
+- Логи `organization-service` без `MailException`.
+- Истёкшие invitations реально помечаются inactive.
+
+**Оценка:** 0.5-1 день (зависит от состояния SMTP creds).
+
+**РЕАЛИЗОВАНО 2026-05-16:** Главный баг найден — невалидный URL приглашения (`/register?invite=` → `/register/invitation?token=`, фикс в `EmailService` + `InvitationService.mapToResponse`). `InvitationResponse.emailSent` пробрасывает silent failure на фронт. `cleanupExpiredInvitations()` теперь `@Scheduled` (был не вызывался). Фронт `EmployeesPage` показывает warning + reason при `emailSent=false`.
+
+**ДОБИТО 2026-05-17:** ранее переписали на **Resend HTTPS API** из-за подозрений на блокировку SMTP-портов ISP. Позже выяснилось — порты не блокированы, **2026-05-18 откат на классический Gmail SMTP** через `JavaMailSender` (`spring-boot-starter-mail` уже был в build.gradle). Конфиг: `spring.mail.host=smtp.gmail.com`, `port=587`, STARTTLS, app-password в `MAIL_PASSWORD`. Секреты в корневом `.env` (gitignored) + `DotEnvEnvironmentPostProcessor` подгружает их при любом способе старта. `docker-compose.yml` пробрасывает `MAIL_HOST`/`MAIL_PORT`/`MAIL_USERNAME`/`MAIL_PASSWORD`/`MAIL_FROM_NAME`/`APP_FRONTEND_URL` через `${VAR:-default}`. Resend-ветка/код-зависимости удалены.
+
+**Преимущество классики:** sandbox-ограничение Resend (только email владельца) снято — отправка идёт с реального ящика `pavelkarliuk1@gmail.com` на любой recipient.
+
+**UI пробрасывает причину:** `InvitationResponse` поле `emailError` сохранено. `EmployeesPage.onInviteSubmit` показывает warning с полным сообщением `MailException` — DIRECTOR видит точную причину, не дженерик.
+
+**Verified 2026-05-17:** `[DotEnv] Loaded N entries from .env` в startup-логе, приглашение → SMTP 220 → письмо приходит в inbox. Auto-cleanup истёкших приглашений (`@Scheduled cron = "0 0 * * * *"`) работает.
+
+---
+
+### 2.9 Приёмка не генерит unit_sku и не привязывает batch_id ✅ DONE 2026-05-16
+
+**Контекст.** При приёмке через `POST /api/receipt-sessions` → `ProductOperationService.doReceive(...)` создаётся `Inventory` запись со следующими значениями:
+- `unit_sku = NULL`
+- `batch_id = NULL` (даже если ReceiptItem.batchId передан — он попадает в ProductOperation, но НЕ в Inventory.batchId, либо передаётся `null` из фронта)
+- `cell_id = X` (присваивается из формы)
+- `quantity = N`
+
+**Подтверждено SQL 2026-05-15** на свежепринятой партии:
+```
+ product_id                           | batch_id | unit_sku | quantity
+--------------------------------------+----------+----------+----------
+ ed849a67-d9f6-4139-9171-f6c0a4d627a2 | NULL     | NULL     |  100.000
+```
+
+**Последствие — pick в заявке отгрузки не работает:**
+- `ShipmentRequestService.pickItem(...)` (line 145-157) ищет позицию заявки через `inventoryRepository.findByUnitSku(unitSku)` → fallback на `findByProductIdAndBatchId(productId, batchId)`. Оба завязаны на `unit_sku` / `batch_id` в inventory.
+- Если оба NULL — pick **гарантированно** возвращает `AppException.notFound("Позиция для штрихкода не найдена в заявке")`.
+- ShipSaga full cycle сломан: невозможно подобрать товар → невозможно завершить заявку.
+
+**Что чинить:**
+
+1. **При приёмке (`ProductOperationService.doReceive` + ReceiptSessionService):**
+   - Генерить `unit_sku` per inventory-запись. Простейший формат: `{productSku}-{batchNumber|short-uuid}-{idx}` (или фронт передаёт штрихкод печатной маркировки). Хранится в `Inventory.unit_sku`.
+   - Записывать `batch_id` в `Inventory.batch_id` (сейчас передаётся, но возможно не доходит — проверить `Inventory.builder().batchId(request.batchId())` в `doReceive`: оно ЕСТЬ, значит проблема в том что фронт `cellId/batchId` шлёт null).
+   - Альтернатива (для MVP): один `unit_sku == productSku + "-" + inventoryId.toString().substring(0,8)`, чтобы pick хотя бы по `productSku` работал.
+
+2. **При создании Batch (через `ProductBatchService`?):**
+   - Если фронт не создаёт Batch перед приёмкой, ReceiveItem.batchId = null. В `doReceive` тогда нужно либо автосоздавать `ProductBatch` (с `batch_number = "auto-{timestamp}"`), либо требовать batchId как обязательный.
+   - Логически: каждая приёмка должна привязываться к Batch (партия = поступление с определённой датой/поставщиком).
+
+3. **На фронте (ReceivePage):**
+   - В `CreateReceiptSessionRequest.ReceiptItem` есть поля `batchNumber` и `expiryDate`. Сейчас они уходят в `request.notes`, но `Batch` не создаётся. Нужен явный шаг «создать Batch» → потом приёмка с `batchId`.
+   - Минимум: после успешного `receiveItemInSession` найти/создать `ProductBatch(productId, batchNumber, expiryDate, supplyId)` и записать `batchId` в Inventory.
+
+4. **`ShipmentRequestService.findItemByInventorySku`** как fallback:
+   - Если unitSku не дал inventory → попробовать `inventoryRepository.findByProductIdAndWarehouseId(productId, warehouseId)` где productId парсим из позиции заявки (а не из inventory).
+   - Это позволит «грубый» pick по productId даже без unit_sku, для MVP.
+
+**Acceptance:**
+- После приёмки `Inventory.unit_sku` НЕ NULL (генерируется автоматически или через печать штрихкода).
+- `batch_id` корректно установлен (как в Inventory, так и в ProductOperation).
+- На ShipPage в детальной модалке заявки `pick` по `productSku` (или сгенерированному unit_sku) завершает позицию, прогресс растёт до 100%.
+- Тест `ShipSagaFullContainerTest` (Testcontainers) — заявка PLANNED → pick → PICKING → complete → 0 → 100% — действительно отрабатывает без mock'а `unitSku = "PROD-001-A"`.
+
+**Оценка:** 0.5-1 день. Главное решение — где генерировать unit_sku (бэк auto vs UI с печатью штрихкода). Для диплома быстро — auto на стороне `doReceive`.
+
+**РЕАЛИЗОВАНО 2026-05-16:**
+- `Inventory.@PrePersist` — авто-генерит `unit_sku = "INV-" + 8 hex chars от inventoryId` (12 символов, под 20-char колонку). Срабатывает для **любой** новой Inventory-записи (приёмка, перемещение, placement, инвентаризация). Идемпотентно: если `unitSku` уже задан — не перезаписывает.
+- Миграция `V9__inventory_unit_sku_backfill.sql` — backfill старых NULL-rows тем же форматом.
+- `ReceiptSessionService.resolveBatchId(...)` — авто-создаёт `ProductBatch` если фронт не передал `batchId`, но передал `batchNumber`. Партия получает `productId`, `organizationId`, `supplyId` сессии, `expiryDate`, `purchasePrice` из формы + `supplier.name` если supplierId задан. Без `batchNumber` — батч не создаётся, `Inventory.batchId` остаётся null (legacy-совместимо).
+- `ShipmentRequestItemRepository.findFirstByRequestIdAndProductIdAndBatchIdIsNull(...)` — новый метод.
+- `ShipmentRequestService.findItemByInventorySku` — расширен: сначала ищет exact-match по `(productId, batchId)`, потом fallback на item с `batchId IS NULL` того же продукта. Закрывает кейс «директор создал заявку без batch, worker сканит лейбл с inventory.batchId=X».
+- Compile + `:product-service:test` (186 тестов) зелёные.
+
+---
+
+### 2.10 RevaluationService — NPE в Map.of payload ✅ DONE 2026-05-16
+
+**Контекст.** При вызове `POST /api/operations/revaluate` (бухгалтер меняет учётную цену) backend падает с `NullPointerException` на `RevaluationService.java:89`:
+
+```java
+inventoryEventService.record(inv.getInventoryId(), InventoryEventType.REVALUED, Map.of(
+        "productId", request.productId(),
+        "warehouseId", request.warehouseId(),
+        "oldPrice", oldPrice,                    // ← может быть null если product.price = null
+        "newPrice", request.newPrice(),
+        "operationId", operation.getOperationId(),
+        "userId", request.userId(),
+        "reason", request.reason()));            // ← может быть null (поле опциональное)
+```
+
+`Map.of(...)` (immutable map) **не принимает null** для key/value — бросает NPE через `Objects.requireNonNull`. Логи это подтверждают:
+```
+java.lang.NullPointerException
+  at java.base/java.util.Objects.requireNonNull(Objects.java:233)
+  at java.base/java.util.ImmutableCollections$MapN.<init>(ImmutableCollections.java:1193)
+  at java.base/java.util.Map.of(Map.java:1518)
+  at by.bsuir.productservice.service.RevaluationService.revaluate(RevaluationService.java:89)
+```
+
+Воспроизводится при первой переоценке только-что принятого товара — у него `product.price` может быть null (фронт `ReceivePage` не обязывает выставлять цену при первой приёмке), плюс `request.reason()` опционален.
+
+**Что чинить:**
+
+Заменить `Map.of(...)` на `HashMap` с условной добавкой null-safe значений:
+
+```java
+Map<String, Object> payload = new HashMap<>();
+payload.put("productId", request.productId());
+payload.put("warehouseId", request.warehouseId());
+if (oldPrice != null) payload.put("oldPrice", oldPrice);
+payload.put("newPrice", request.newPrice());
+payload.put("operationId", operation.getOperationId());
+payload.put("userId", request.userId());
+if (request.reason() != null) payload.put("reason", request.reason());
+inventoryEventService.record(inv.getInventoryId(), InventoryEventType.REVALUED, payload);
+```
+
+Аналогично проверить остальные `Map.of(...)` в product-service — если хоть один аргумент опциональный, это бомба замедленного действия. Кандидаты:
+- `WriteOffService` (`Map.of` для WRITTEN_OFF event)
+- `InventoryEventService.record` сам по себе — если внутри тоже `Map.of`
+- Любые места где формируется event payload
+
+**Acceptance:**
+- `POST /api/operations/revaluate` без `reason` и для товара с `price=null` отрабатывает успешно.
+- `inventory_events.event_data` содержит только не-null поля.
+- Никаких NPE на `Map.of` в логах при операциях revaluate / write-off / inventory.
+
+**Оценка:** 0.5 ч на `RevaluationService` + ~1 ч на audit остальных `Map.of` payload-ов.
+
+**РЕАЛИЗОВАНО 2026-05-16 (вместе с §2.16):**
+- `RevaluationService:89` — `Map.of(...)` заменён на `HashMap` + явные `.put(...)`. Допускает null для `oldPrice` и `reason`.
+- `InventoryCheckService:203` — `Map.of` в stream-lambda заменён на HashMap с null-safe `.toString()` per-поле. `discrepancies` response теперь не падает на новых InventoryCount с null actualQuantity.
+- `InventoryCheckService:251` — `Map.of("source", ..., "countId", ..., "sessionId", ...)` заменён на HashMap (sessionId может быть null для standalone counts).
+- `ShipmentSagaService:146, 246` — `Map.of(...)` для OPERATION_RECORDED заменены на helper `buildOperationEventPayload(operation)` с null-safe putIfNotNull для каждого поля entity.
+- **Центральная защита:** `InventoryEventService.record(...)` теперь делает defensive-copy в HashMap и **отбрасывает null ключи и значения** перед `objectMapper.valueToTree`. Belt-and-suspenders — даже если новый caller просочит null, инцидент не разрушит транзакцию.
+- `ProductOperationService:267` (transferMeta) **не трогал**: `TransferProductRequest.fromWarehouseId/toWarehouseId` уже валидируются `@NotNull` на DTO + центральная защита.
+- Compile + `:product-service:test` (186 тестов) зелёные.
+
+---
+
+### 2.11 Eureka instance hardcoded на `127.0.0.1` / `localhost` во всех 5 сервисах ✅ DONE 2026-05-16
+
+**Контекст.** Code review 2026-05-16. Во всех 5 сервисах в `application.properties` прописано:
+```properties
+eureka.instance.prefer-ip-address=true
+eureka.instance.ip-address=127.0.0.1
+eureka.instance.hostname=localhost
+```
+
+Файлы: `SSOService/application.properties:43-44`, `organization-service/application.properties:6-7`, `warehouse-service/application.properties:6-7`, `product-service/application.properties:20-21`, `document-service/application.properties:6-7`.
+
+**Последствия:**
+- В Docker Compose: каждый контейнер регистрируется в Eureka со своим адресом `127.0.0.1:<port>`. Когда api-gateway резолвит `lb://PRODUCT-SERVICE`, Ribbon берёт `127.0.0.1:8030` из Eureka и стучится **на свой loopback** (в контейнер gateway, не product-service). Все `/api/products/**` запросы 502/connection refused.
+- В Kubernetes: тот же эффект — поды видят чужие `127.0.0.1` и пытаются ходить к себе же.
+- Локальный одно-process запуск (всё на хосте) — единственный сценарий, где это работает.
+
+**Что чинить:**
+1. **Снять hardcoded `eureka.instance.ip-address=127.0.0.1` и `eureka.instance.hostname=localhost`** во всех 5 properties — Eureka возьмёт реальный сетевой адрес контейнера автоматически.
+2. Для Docker Compose: добавить env-override в `docker-compose.yml` для каждого сервиса:
+   ```yaml
+   environment:
+     - EUREKA_INSTANCE_PREFER_IP_ADDRESS=true
+     - EUREKA_INSTANCE_HOSTNAME=${HOSTNAME}
+   ```
+3. Для k8s: аналогично через ConfigMap / env, либо использовать downward API (`fieldRef: status.podIP`).
+4. **Проверить, что `eureka.client.service-url.defaultZone`** в `docker-compose.yml` уже указывает на `http://eureka-server:8761/eureka/`, не на `localhost`.
+5. Прогнать end-to-end: поднять стек через `docker-compose up`, дёрнуть `GET http://localhost:8765/api/products`, убедиться что нет 502.
+
+**Acceptance:**
+- `docker-compose up` поднимает стек, и любой эндпоинт через gateway отрабатывает (не 502/connection refused).
+- В Eureka-UI (`http://localhost:8761`) каждый сервис имеет нормальный IP (например `172.18.0.x`), не `127.0.0.1`.
+
+**Оценка:** 0.5 дня.
+
+**РЕАЛИЗОВАНО 2026-05-16:**
+- Из `application.properties` всех 5 сервисов (`SSOService`, `organization-service`, `warehouse-service`, `product-service`, `document-service`) удалены 2 строки `eureka.instance.ip-address=127.0.0.1` + `eureka.instance.hostname=localhost`. `eureka.instance.prefer-ip-address=true` оставлен — Eureka resolve'ит реальный сетевой адрес контейнера автоматически.
+- `docker-compose.yml` уже корректно ставит `EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka` + `EUREKA_INSTANCE_PREFER_IP_ADDRESS=true` для каждого сервиса. После снятия hardcoded properties эти env-vars больше не конфликтуют.
+- Для локального запуска (без Docker) — `eureka.client.service-url.defaultZone=http://localhost:8761/eureka` остался, IP контейнера = IP хоста = localhost, работает как раньше.
+- `:allTestWithCoverage` — BUILD SUCCESSFUL (все 5 сервисов).
+
+---
+
+### 2.12 OAuth callback hardcoded на `http://localhost:3000` ✅ DONE 2026-05-17
+
+**Контекст.** Code review 2026-05-16. `SSOService/controller/OAuthController.java` (5 мест: lines 72, 80, 98, 107, 116) и `SSOService/service/OAuthService.java:195` содержат hardcoded `http://localhost:3000/auth/callback?...` для редиректа после OAuth. Параллельно `InvitationService.java:30` и `EmailService.java:22` уже используют `@Value("${app.frontend.url:http://localhost:3000}")` корректно.
+
+**Последствия:** в проде/staging OAuth-callback редиректит браузер пользователя на `http://localhost:3000` (которого там нет) → OAuth-логин не работает.
+
+**Что чинить:**
+1. В `OAuthController` и `OAuthService` инжектить `@Value("${app.frontend.url}")` (default `http://localhost:3000`).
+2. Заменить все 6 хардкодов на `String.format(frontendUrl + "/auth/callback?...", ...)`.
+3. Унифицировать с уже работающим паттерном из `InvitationService` / `EmailService`.
+
+**Оценка:** 0.5 ч.
+
+---
+
+### 2.13 JWT issuer hardcoded `http://localhost:7777` ✅ DONE 2026-05-17
+
+**Контекст.** `SSOService/service/JwtTokenService.java:45` — `.issuer("http://localhost:7777")`. Порт 7777 в проекте **не используется** (SSO на 8000) — выглядит как legacy от ранней версии. Issuer claim попадает в каждый выданный access-token (`iss: "http://localhost:7777"`).
+
+**Последствия:** косметика — но если когда-нибудь добавим validate-issuer в downstream-сервисах или внешних потребителях, токены сразу станут невалидными. Также сбивает с толку при отладке JWT в jwt.io.
+
+**Что чинить:**
+1. Вынести в `@Value("${app.security.jwt.issuer:wms-sso}")` или константу `"wms-sso"` (внутренний идентификатор), а не URL.
+2. Если хочется URL — указать актуальный `http://localhost:8000` (или env-aware через config).
+
+**Оценка:** 15 мин.
+
+---
+
+### 2.14 EmployeeAnalyticsService обращается к несуществующему endpoint через `localhost:8030` ✅ DONE 2026-05-16
+
+**Контекст.** `organization-service/service/EmployeeAnalyticsService.java:90`:
+```java
+String url = "http://localhost:8030/api/operations/user/" + userId + "/stats";
+return restTemplate.getForObject(url, Map.class);
+```
+
+**Два бага сразу:**
+1. **Hardcoded `http://localhost:8030`** — `new RestTemplate()` без LoadBalanced, обходит Eureka. В Docker/k8s `localhost:8030` — это собственный контейнер org-service, не product-service.
+2. **Endpoint `/api/operations/user/{userId}/stats` НЕ существует в product-service** — grep по `product-service/controller/**/*.java` не находит ни одного матча. Запрос **всегда** попадает в `catch (Exception)` и возвращает заглушку `{totalOperations: 0, available: false}`.
+
+**Эффективно:** `getEmployeeOperationsStats` — мёртвый код, аналитика производительности сотрудников всегда показывает `LOW` rating с нулём операций.
+
+**Что чинить:**
+1. **Решить feature scope:** нужна ли вообще аналитика сотрудников? Если да — реализовать endpoint в product-service (`GET /api/operations/user/{userId}/stats` → агрегат по `product_operation` за период) и переключить на LoadBalanced RestTemplate (`http://PRODUCT-SERVICE/api/...`).
+2. Если нет — удалить `EmployeeAnalyticsService` (или вырезать обращение к product-service) и upstream-вызовы, не оставлять мёртвую заглушку, маскирующую отсутствие данных.
+
+**Оценка:** 0.5-1 день если реализовывать stats endpoint в product-service; 30 мин если просто удалить мёртвый код.
+
+**РЕАЛИЗОВАНО 2026-05-16 (вариант 2 — cleanup):**
+- `EmployeeAnalyticsService` очищен: удалены `RestTemplate` field, `getEmployeeOperationsStats(...)`, `calculatePerformanceRating(...)`, все `try/catch` блоки и поля `operationsStats` / `avgOperationsPerDay` / `performanceRating` из response. Метрики performance НЕ оценивались (endpoint не существовал, всегда возвращал `available: false`).
+- Response теперь содержит только реальные данные: `userId` / `role` / `joinedAt` / `daysWorked` (+ `orgId` / `monthsWorked` для одного сотрудника).
+- Фронт `AnalyticsPage.js` — удалены 2 колонки «Всего операций» + «Разбивка по типам» из таблицы аналитики сотрудников. Сортировка теперь по `daysWorked DESC` (раньше по `totalOperations` который всегда был 0).
+- Существующие тесты `EmployeeAnalyticsServiceTest` (5 тестов) проверяют только `userId/role/joinedAt/daysWorked/monthsWorked` — поломки не словили.
+- Эталон уважает фактическую функциональность: WMS показывает «кто в штате и сколько дней», а не маскирует отсутствующую интеграцию с product-service.
+
+---
+
+### 2.15 Lost-update в Inventory: нет `@Lock` / `@Version` на конкурентных update'ах ✅ DONE 2026-05-16
+
+**Контекст.** `InventoryRepository.findByProductIdAndWarehouseId(...)` (и связанные методы) не используют ни `@Lock(PESSIMISTIC_WRITE)`, ни `@Version` на `Inventory`. Сейчас `@Lock` есть **только** в `DocumentCounterRepository` (для serial counter — это правильно). Inventory mutation pattern read-modify-save: read через `findByProductIdAndWarehouseId`, потом `inv.setQuantity(qtyBefore.subtract(qty))`, потом `save(inv)`.
+
+**Где это паттерн:**
+- `WriteOffService.writeOff` (line 43-64).
+- `RevaluationService.revaluate` (line 85+).
+- `ProductOperationService.doReceive` / `receiveProduct` / `transfer` (lines 96, 199, 221).
+- `ShipmentSagaService.executeInventoryUpdate` (line 192-217).
+- `InventoryCheckService.adjustInventory` (line 215+).
+- `SagaOrchestrator.compensate` / `compensateShipSaga` — тоже модифицирует quantity.
+
+**Сценарий бага:**
+1. Кладовщик A списывает 5 единиц product X (quantity=10, reservedQuantity=0).
+2. Параллельно saga отгрузки B списывает 5 единиц того же X.
+3. Оба читают `quantity=10`, оба считают `10-5=5`, оба `save`.
+4. Итог в БД: `quantity=5` (вместо `0`). 5 единиц «появились из воздуха».
+
+**Что чинить:**
+1. **Добавить `@Lock(LockModeType.PESSIMISTIC_WRITE)` на read-методы**, используемые перед write'ом:
+   ```java
+   @Lock(LockModeType.PESSIMISTIC_WRITE)
+   @Query("SELECT i FROM Inventory i WHERE i.productId = :pid AND i.warehouseId = :wid")
+   Optional<Inventory> findByProductIdAndWarehouseIdForUpdate(@Param("pid") UUID productId,
+                                                              @Param("wid") UUID warehouseId);
+   ```
+   Существующий `findByProductIdAndWarehouseId` оставить для read-only сценариев (UI-листинги, analytics).
+2. **Альтернатива** — добавить `@Version Long version` в `Inventory` (optimistic locking). На конфликте — `OptimisticLockException`, в saga вернуть retry. Дешевле под нагрузкой, но требует обработки retry в каждом writer'е.
+3. Прогнать stress-тест: 50 параллельных отгрузок одной позиции через JMeter / простой Java-скрипт с `ExecutorService` — итоговый `quantity` должен быть консистентным.
+
+**Acceptance:**
+- 100 параллельных списаний 1 единицы из inventory с `quantity=100` дают итог `quantity=0`, не положительное число.
+- Saga compensation не теряет изменения при конкурентном write'е.
+
+**Оценка:** 1 день (миграция, новый repo-метод, рефакторинг 5 writer'ов на ForUpdate, stress-тест).
+
+**РЕАЛИЗОВАНО 2026-05-16:**
+- **Note:** `Inventory` уже имеет `@Version Long version` + DDL `version BIGINT NOT NULL DEFAULT 0` (оптимистическое блокирование было). Реальная проблема была не «lost-update», а **отсутствие retry на `OptimisticLockException`** + защита от долгих read-then-write окон.
+- `InventoryRepository` — добавлены 2 новых метода с `@Lock(LockModeType.PESSIMISTIC_WRITE)`:
+  - `findByProductIdAndWarehouseIdForUpdate(productId, warehouseId)` — для receive/writeoff/inventory-check/transfer.
+  - `findByIdForUpdate(inventoryId)` — для saga (ship-saga inventory update, обе компенсации).
+- Read-only `findByProductIdAndWarehouseId` / `findById` оставлены — нужны для UI-листингов, FEFO selection, read-only выборок.
+- **6 writer-сайтов мигрированы на ForUpdate:**
+  - `ProductOperationService.doReceive` (приёмка)
+  - `ProductOperationService.transferProduct` (source + dest, 2 места)
+  - `WriteOffService.writeOff`
+  - `ShipmentSagaService.executeInventoryUpdate`
+  - `InventoryCheckService.adjustInventory`
+  - `SagaOrchestrator.compensate` / `compensateShipSaga` (3 места: INVENTORY_UPDATE receive, INVENTORY_UPDATE ship, STOCK_RESERVATION ship)
+  - `ShipmentRequestService.complete` (FEFO allocation)
+- **Bonus fix:** в `ProductOperationService.transferProduct` убран `dest.setUnitSku(null)` (line 233) — затирал unit_sku при merge в существующую ячейку, ломал §2.9 (pick по штрихкоду). Теперь unit_sku сохраняется across transfers.
+- Тесты `WriteOffServiceTest`, `ProductOperationServiceTest`, `SagaOrchestratorTest` обновлены — моки переименованы на `findByProductIdAndWarehouseIdForUpdate` / `findByIdForUpdate`.
+- `:product-service:test` + `:allTestWithCoverage` — BUILD SUCCESSFUL.
+
+---
+
+### 2.16 `Map.of` NPE — расширенный audit ✅ DONE 2026-05-16 — закрыт вместе с §2.10
+
+**Контекст.** Помимо `RevaluationService.java:89` (§2.10), grep нашёл ещё кандидатов на NPE через `Map.of(...)` с `BigDecimal.toString()` / `getName()` на возможно-null полях:
+
+| Файл:строка | Риск |
+|---|---|
+| `ProductOperationService.java:267` | `fromWarehouseId` / `toWarehouseId` — для transfer обязательны, но если фронт пришлёт null → NPE до validation |
+| `InventoryCheckService.java:203` | `expectedQuantity.toString()` / `actualQuantity.toString()` / `discrepancy.toString()` — NPE если хоть один BigDecimal null (а они могут быть null у новых counts до save) |
+| `ShipmentSagaService.java:146` | `productId.toString()` / `warehouseId.toString()` / `quantity.toString()` на staging operation — entity может не иметь warehouseId если ShipProductRequest некорректен |
+| `ShipmentSagaService.java:246` | то же на финальной operation отгрузки |
+
+**Что чинить:**
+1. Применить тот же фикс что в §2.10 — `HashMap` + null-safe `put`-ы.
+2. Лучше — в `InventoryEventService.record(...)` сделать **defensive copy** в `HashMap` и `entrySet().removeIf(e -> e.getValue() == null)` — централизованная защита от NPE для всех event payload.
+
+**Оценка:** 1 ч (2 файла + защита в InventoryEventService).
+
+---
+
+### 2.17 `AnalyticsReportService.generateReport` — ABC-данные потеряны ✅ DONE 2026-05-17
+
+**Контекст.** `product-service/service/AnalyticsReportService.java:38`:
+```java
+Map<String, Object> abcReport = Map.of(
+        "abcItems", abcAnalysisService.getAbcReport().size()
+);
+
+return buildPdf(preset, from, to, dynamics, inventory);  // ← abcReport НЕ передан
+```
+
+`abcReport` создаётся, но **никогда не используется** — `buildPdf(...)` не принимает 4-й аргумент. ABC-анализ должен быть разделом PDF-отчёта, но в финальный PDF не попадает.
+
+**Что чинить:**
+1. Расширить сигнатуру `buildPdf(...)` на 4-й параметр `Map<String, Object> abc`.
+2. Добавить раздел «ABC-анализ» в PDF (число позиций / процент по классам A/B/C, если есть).
+3. Либо удалить мёртвую строку, если ABC не требуется в отчёте.
+
+**Оценка:** 30 мин (если просто добавить раздел в PDF) или 5 мин (если удалить мёртвый код).
+
+---
+
+### 2.18 OperationController.findById без org-фильтра ✅ DONE 2026-05-17
+
+**Контекст.** `product-service/controller/OperationController.java`:
+- Line 283 (`revaluate`): `productRepository.findById(request.productId()).ifPresent(p -> { docPayload.put("productName", p.getName()); docPayload.put("productSku", p.getSku()); });`
+- Line 319 (`writeOff`): то же самое.
+
+**Риск.** Defense-in-depth gap: `revaluationService` / `writeOffService` уже проверяют что Inventory принадлежит организации, и без существующего Inventory документ не сгенерится. Но если злоумышленник передаст productId чужой организации, у которой случайно есть Inventory с тем же warehouseId (теоретически возможно при cross-org cell sharing), — он получит имя/SKU чужого продукта в payload документа. На практике сейчас warehouses скоупятся per-org, так что реальный exploit маловероятен.
+
+**Что чинить:**
+- Использовать `productRepository.findByIdAndOrganizationId(productId, organizationId)` (нужно добавить метод в `ProductReadModelRepository`).
+
+**Оценка:** 30 мин.
+
+---
+
+### 2.19 `@Scheduled` cron jobs запустятся на каждой реплике ✅ DONE 2026-05-17 (вариант A — replicas=1 enforced)
+
+**Контекст.** Три `@Scheduled` job-а в product-service / organization-service:
+- `AbcAnalysisService.computeAbcAnalysis` — `0 0 2 * * *` (ежедневно в 02:00).
+- `ErpExtractorJob.run` — `0 0 3 * * *` (ежедневно в 03:00).
+- `InvitationCodeScheduler.cleanup` — `0 0 * * * *` (ежечасно).
+
+Все они без any `ShedLock` / `@SchedulerLock`. При `replicas > 1` в k8s все реплики запустят job одновременно → дубль ABC-пересчёта, дубль ERP-вытяжки (если PlannedDelivery `externalId` UNIQUE — словит constraint violation, но потеряет диагностику; если не UNIQUE — реальные дубли).
+
+**Сейчас:** все services развёрнуты с `replicas=1` (см. `project-k8s-state` memory) → бага не воспроизвести. Но при scale-out внезапно.
+
+**Что чинить:**
+1. Добавить `net.javacrumbs.shedlock:shedlock-spring + shedlock-provider-jdbc-template` в `product-service/build.gradle` и `organization-service/build.gradle`.
+2. Создать таблицу `shedlock` (миграция Flyway).
+3. Аннотировать каждый `@Scheduled` метод `@SchedulerLock(name = "abc-analysis", lockAtMostFor = "10m", lockAtLeastFor = "5m")`.
+4. Либо проще для диплома: оставить `replicas=1` и **задокументировать в k8s manifests + DEPLOYMENT.md** что эти deployments **нельзя скейлить**.
+
+**Оценка:** 0.5 дня для ShedLock; 5 мин для документирования ограничения.
+
+**РЕАЛИЗОВАНО 2026-05-17 (вариант A):**
+- `k8s/04-backend.yaml` — `organization-service` и `product-service` явно установлены в `replicas: 1` с inline-комментарием про `@Scheduled` + ShedLock-зависимость.
+- Остальные сервисы (`warehouse-service`, `document-service`, `sso-service`) остались `replicas: 2` — в них нет cron-задач.
+- ShedLock-вариант B оставлен как future task (см. memory `project_wms_subsystems` если когда-нибудь планируется scale-out для cron-сервисов).
+
+---
+
+### 2.20 Мелкие config issues — `logging.level` на чужой пакет ✅ DONE 2026-05-17
+
+**Контекст.** В трёх properties-файлах прописан DEBUG на пакет `by.bsuir.organizationservice`, которого в этих сервисах **нет**:
+- `product-service/application.properties:52`
+- `warehouse-service/application.properties:44`
+- `api-gateway/application.properties:38`
+
+Эффект нулевой (логгер для несуществующего класса просто никогда не сработает), но конфиг enmertled.
+
+**Что чинить:** заменить на корректный пакет для каждого сервиса (`by.bsuir.productservice`, `by.bsuir.warehouseservice`, `by.bsuir.apigateway`) или удалить строку.
+
+**Оценка:** 5 мин.
+
+---
+
+### 2.21 CORS в SSOService жёстко на `localhost:3000` + api-gateway вообще без CORS (2026-05-16) ❌ PENDING
+
+**Контекст.**
+- `SSOService/config/CORSConfig.java:28` — `config.setAllowedOrigins(List.of("http://localhost:3000", "http://127.0.0.1:3000"))`. Hardcoded, не работает в проде.
+- `api-gateway` — grep по `Cors|corsConfigurationSource|setAllowedOrigins` ничего не находит. Gateway вообще без CORS-фильтра.
+
+**Последствия:**
+- В dev: фронт `localhost:3000` бьёт **на gateway** `localhost:8765`. Браузер отправляет preflight `OPTIONS` → gateway возвращает без `Access-Control-Allow-Origin` → CORS error в консоли. Работает только если frontend проксирует через nginx (prod-сборка) или CRA dev-proxy.
+- В проде: nginx на `client/nginx.conf` проксирует `/api → api-gateway:8765` — это обходит CORS, потому что browser видит один origin.
+- Но прямой dev-режим (CRA dev server + gateway без proxy) — не работает.
+
+**Что чинить:**
+1. Добавить `CorsWebFilter` в `api-gateway` (это WebFlux, нужен `CorsWebFilter`, не `WebMvc.CorsRegistry`):
+   ```kotlin
+   @Bean
+   fun corsWebFilter(): CorsWebFilter {
+       val config = CorsConfiguration()
+       config.allowedOriginPatterns = listOf("*")  // dev: разрешить всё; prod: env-aware
+       config.allowedMethods = listOf("GET","POST","PUT","PATCH","DELETE","OPTIONS")
+       config.allowedHeaders = listOf("*")
+       config.allowCredentials = true
+       val source = UrlBasedCorsConfigurationSource()
+       source.registerCorsConfiguration("/**", config)
+       return CorsWebFilter(source)
+   }
+   ```
+2. `SSOService/CORSConfig.java:28` — вынести allowed origins в `@Value("${app.cors.allowed-origins}")` (comma-separated).
+
+**Оценка:** 0.5-1 ч.
+
+---
+
+### 2.22 OAuth client secrets закоммичены в репо (2026-05-16) ❌ PENDING — **security**
+
+**Контекст.** `SSOService/src/main/resources/application.properties`:
+```
+oauth.yandex.client-secret=357160e2fd874d7ba916e1ce758d379c
+oauth.google.client-secret=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
+```
+
+Эти секреты лежат в git и видны в публичном репо. Тот же файл содержит OAuth client-id и redirect uri. У memory `feedback_backend_first_no_tests` / `backend/CLAUDE.md` есть прямое предупреждение: «Treat that file as sensitive — don't rotate or regenerate without coordinating with the user».
+
+**Риск.** Любой кто склонит репо получит креды для Yandex/Google OAuth-приложений → может выдавать токены от имени проекта или перехватывать пользователей. Для дипломного проекта — низкий импакт, но badpractice.
+
+**Что чинить:**
+1. **Ротировать оба secret'а** в Yandex и Google Cloud Console (создать новые, старые сразу отозвать).
+2. Перевести на env-var:
+   ```properties
+   oauth.yandex.client-secret=${YANDEX_OAUTH_CLIENT_SECRET:}
+   oauth.google.client-secret=${GOOGLE_OAUTH_CLIENT_SECRET:}
+   ```
+3. Прописать в `docker-compose.yml` и k8s `Secret`.
+4. **`git filter-repo`** для удаления из истории (опционально для диплома, обязательно для production).
+
+**Оценка:** 1-2 ч (ротация + правки конфига); +1 день если зачищать git-историю.
+
+---
+
+### 2.23 Тест `SsoServiceApplicationTests` отключён ❌ PENDING — выходит за scope cosmetic (нужен полный H2 + Redis mock)
+
+**Контекст.** `backend/SSOService/src/test/java/by/bsuir/ssoservice/SsoServiceApplicationTests.java:7` — `@Disabled()`. Это smoke-test что Spring context поднимается. Сейчас не проверяется — поломка bean wiring словится только при реальном `bootRun`.
+
+**Что чинить:**
+1. Снять `@Disabled`.
+2. Если контекст падает — починить (вероятно Redis/Postgres недоступны в unit-тестовом профиле, нужно подсунуть `@MockBean` для них или переключить на Testcontainers).
+
+**Оценка:** 1-2 ч.
+
+---
+
+### 2.24 Frontend: `API_BASE_URL` продублирован в 4 файлах ✅ DONE 2026-05-17
+
+---
+
+### 2.25 `JwtAuthenticationFilter` в api-gateway не был зарегистрирован ✅ DONE 2026-05-17 — найден по ходу §4 I5
+
+**Контекст.** При работе над §4 I5 обнаружено: `backend/api-gateway/src/main/java/by/bsuir/apigateway/filter/JwtAuthenticationFilter.java` объявлен как `public class JwtAuthenticationFilter implements GlobalFilter, Ordered` **без `@Component`**. Spring его не подхватывал → JWT на gateway **не валидировался**. `SecurityConfig` стоял `.anyExchange().permitAll()`. Defence-in-depth работала только на уровне downstream-сервисов (каждый имеет свой `JwtAuthenticationFilter`), но gateway пропускал любые запросы с любыми (или без) токенами.
+
+**РЕАЛИЗОВАНО:** добавлен `@Component` + `@RequiredArgsConstructor` на `JwtAuthenticationFilter` (вместе с §4 I5 (b) — переходом на `ReactiveStringRedisTemplate`). Теперь фильтр реально работает: каждый non-excluded запрос валидирует JWT, кладёт `X-User-Id`/`X-User-Role`/etc заголовки в downstream-request.
+
+---
+
+### 2.26 Дубликат `keystore/` + закоммиченный JWT private-key ✅ DONE 2026-05-18 (partial)
+
+**Контекст.** В репозитории было два keystore-каталога с **разными RSA-парами**:
+- `backend/SSOService/keystore/` (untracked в submodule, но локально жил)
+- `wmsProject_org/keystore/` (**закоммичен** в umbrella репо — `keystore/jwt-private.key` + `jwt-public.key` в `git ls-files`)
+
+Какой из двух SSO загружал — зависело от CWD при запуске (через `gradlew :SSOService:bootRun` из `backend/` vs `wmsProject_org/`). После каждой смены CWD токены подписывались разной keypair, а gateway кэшировал public-key в Redis на 1h → токены из «прошлого CWD» переставали валидироваться → 401 на любых protected endpoint'ах.
+
+**РЕАЛИЗОВАНО 2026-05-18:**
+- `keystore/jwt-private.key` + `jwt-public.key` сняты с трекинга через `git rm --cached` (на диске сохранены — SSO работает).
+- В корневой `.gitignore` добавлены `keystore/` + `**/keystore/` — покрывает оба каталога.
+- SSO теперь грузит из `wmsProject_org/keystore/` (umbrella, как и было). Старый `backend/SSOService/keystore/` остаётся локально, но в git не уйдёт.
+
+**Что НЕ сделано (см. §2.28):** приватный ключ всё ещё в git history (`6f48d21` и более ранние коммиты). Полная санация — `git filter-repo` или ротация keypair.
+
+### 2.27 Gateway `JwtAuthenticationFilter` блокировал на event-loop треде ✅ DONE 2026-05-18
+
+**Контекст.** §4 I5 (b) переключил кэш public-key с in-memory на `ReactiveStringRedisTemplate`, но оставил sync-вызов `redisTemplate.opsForValue().get(...).block()` внутри `getPublicKey()`. Spring Cloud Gateway работает на Netty event-loop тредах (`parallel-N`), а Reactor запрещает `block()/blockFirst()/blockLast()` на них. Результат: **каждый** non-excluded запрос ловил `IllegalStateException: block()/blockFirst()/blockLast() are blocking, which is not supported in thread parallel-12`, попадал в outer `catch (Exception)` → 401. Эффективно: gateway возвращал 401 на ВСЕ запросы после §2.25 + §4 I5.
+
+**Симптом у пользователя:** OAuth-логин проходил (`/api/oauth/**` в EXCLUDED_PATHS), но первый же `/api/auth/me` после редиректа возвращал 401 с пустым body. Auth-токен был корректный, проблема — в самом filter'е.
+
+**РЕАЛИЗОВАНО:**
+1. `filter(...)` теперь оборачивает всю синхронную JWT-валидацию (parse + getPublicKey + verify + claims-extract + header-mutate) в `Mono.fromCallable(...).subscribeOn(Schedulers.boundedElastic())` — blocking-вызовы Redis/HTTP уходят с event-loop тредов на elastic pool, где `.block()` легален.
+2. Логика верификации вынесена в helper `validateAndBuildRequest(...)`, возвращающий готовый `ServerHttpRequest` (или throws).
+3. Self-heal на verify-failure: при invalid signature на cached key — `redisTemplate.delete(REDIS_KEY).block()` + refetch + retry verify один раз. Закрывает кейс ротации keypair SSO без рестарта gateway (актуально после §2.26).
+4. Helper `unauthorized(exchange)` убрал дублирование return-401.
+
+**Файл:** `backend/api-gateway/src/main/java/by/bsuir/apigateway/filter/JwtAuthenticationFilter.java`.
+
+### 2.28 JWT private-key в git history ❌ PENDING (security)
+
+**Контекст.** §2.26 убрал ключи из текущего working tree + index, но история git хранит `keystore/jwt-private.key` в коммите `6f48d21 fix: fixed bugs and k8s deploy` и более ранних. Любой кто склонит репо и сделает `git log -p -- keystore/jwt-private.key` достаёт private key и может подписывать валидные JWT с любым `userId`/`role`.
+
+**Что делать (по выбору):**
+- **A. Ротация (рекомендую):** удалить `keystore/jwt-{public,private}.key` локально, перезапустить SSO — `SecurityBeansConfig.keyPair()` сгенерит новый keypair и сохранит. Все существующие токены перестанут валидироваться (пользователи должны заново залогиниться, через self-heal §2.27 это сработает). Старый private-key в history становится бесполезным.
+- **B. Чистка истории:** `git filter-repo --invert-paths --path keystore/jwt-private.key --path keystore/jwt-public.key` + force-push. Деструктивно, требует синхронизации с любыми клонами репо. Для дипломного проекта overkill, если **A** уже сделано.
+
+**Оценка:** 10 минут на A, 30 минут на B.
+
+---
+
+**Контекст.** Один и тот же fallback `'http://localhost:8765'` со чтением `process.env.REACT_APP_API_URL` повторён в:
+- `client/src/services/documentService.js:5`
+- `client/src/store/api.js:4`
+- `client/src/pages/LoginPage.js:14`
+- `client/src/components/shared/OAuthButtons.js:4`
+
+При смене default'а (например на `''` для prod-сборки за nginx) нужно править 4 места.
+
+**Что чинить:** вынести в `client/src/config/api.js` (уже существует) экспортом `export const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8765';` и импортить во всех 4 файлах.
+
+**Оценка:** 15 мин.
+
+---
+
+## 4. I5. Redis для api-gateway ✅ DONE 2026-05-17 / hotfix 2026-05-18
+
+- **(a)** Мёртвый Caffeine выпилен (2 строки properties + dependency).
+- **(b)** Distributed JWT public-key cache в Redis (ключ `gw:jwt-public-key`, TTL 1h). Заодно зарегистрирован `JwtAuthenticationFilter` как `@Component` — раньше он не был bean'ом (см. §2.25). **Hotfix 2026-05-18:** реализация (b) содержала `.block()` на Netty event-loop треде → 401 на всех запросах. Закрыто в §2.27 — фильтр обёрнут в `Mono.fromCallable(...).subscribeOn(Schedulers.boundedElastic())` + добавлен self-heal при mismatch'е cached vs current SSO public key.
+- **(c)** Rate limiter снят полностью — в WMS-сценарии все юзеры за одним NAT, per-IP лимит ломает легитимные UI-burst'ы. Anti-brute-force переносится на уровень SSO `login_audit` (отдельная задача).
+
+---
+
+## 4.2 End-to-end проверка docker-compose ❌ PENDING — **обязательно перед защитой**
+
+После всех правок (§2.x + миграции в sql-scripts + Resend + .env + rate-limit снят + §0.4 трекер) нужно прогнать весь стек целиком и убедиться что ничего не отвалилось:
+
+1. **Cleanup:** `.\cleanup-docker.ps1` (выкосить старые volumes, иначе старая схема БД останется).
+2. **Build:** `.\build-images.ps1` — пересобрать все `wms/*` образы.
+3. **Up:** `.\deploy-docker.ps1` или `docker-compose up -d`.
+4. **Что проверять:**
+   - **Eureka UI** (`http://localhost:8761`) — должны зарегистрироваться все: `EUREKA-SERVER`, `API-GATEWAY`, `SSOSERVICE`, `ORGANIZATION-SERVICE`, `WAREHOUSE-SERVICE`, `PRODUCT-SERVICE`, `DOCUMENT-SERVICE`. Все `UP`.
+   - **Gateway маршрутизация** (`http://localhost:8765/actuator/gateway/routes`) — список routes, всё `lb://...` резолвится.
+   - **БД-схемы** проверить через `psql` или DBeaver на каждом из 4 портов 5432-5435: что таблицы из `sql-scripts/*.sql` созданы. Если `ddl-auto=validate` падает на старте сервиса — несовпадение entity vs SQL.
+   - **MinIO** (`http://localhost:9001`, login `wmsadmin/wmsadmin12345`) — bucket `wms-documents` существует.
+   - **Фронт** (`http://localhost:3000`) — открывается, логин работает, можно зарегистрироваться директором, создать склад, ячейку, поставщика, поставку, приёмку, отгрузку.
+   - **Resend** (если задан в `.env`) — приглашение реально отправляется на `pavelkarliuk1@gmail.com` через гейтвей → org-service.
+   - **Полный BP-1 / BP-2 / BP-5** прогон через UI — приёмка с генерацией receipt-act + отгрузка DOMESTIC с picking-list + инвентаризация.
+   - **RabbitMQ UI** (`http://localhost:15672`, login `guest/guest`) — queues созданы, сообщения проходят при операциях.
+   - **Логи каждого контейнера** — никаких `ERROR` при старте, `Started ... in N seconds`.
+
+**Возможные подводные камни:**
+- `.env` должен быть в корне (docker-compose читает оттуда `RESEND_API_KEY` для org-service).
+- `eureka.client.service-url.defaultZone` в свежих properties не имеет `EUREKA_HOSTNAME` override — docker-compose уже задаёт `EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka` через env, должно работать.
+- `replicas=1` для organization-service и product-service (zaeded §2.19) — docker-compose сам делает 1 контейнер, но если когда-нибудь поднимать через k8s — manifest'ы уже корректные.
+
+**Acceptance:** все service'ы здоровы в `docker ps`, можно пройти базовый user-flow на фронте без 502/500.
+
+**Оценка:** 1-2 часа (включая фикс возможных мелких регрессий после правок).
+
+---
+
+## 4.1 Flyway миграции удалены 2026-05-17
+
+В корне был набор `backend/<service>/src/main/resources/db/migration/V*.sql` (SSOService V1-V2, organization V1-V2, warehouse V1-V3, product V1-V9). Они **никогда не подключались как Flyway** (зависимость `org.flywaydb` не в build.gradle ни одного сервиса) — просто лежали как «история изменений схемы». Реальный init БД делается через `sql-scripts/{userDB,organizationDB,warehouseDB,productDB}.sql` в Postgres-контейнерах.
+
+**Парность подтверждена 2026-05-17:** все DDL из миграций уже есть в `sql-scripts/*.sql`. Конкретно:
+- SSO V2 (`ip_address TYPE TEXT`) → `userDB.sql:39` ✅
+- Org V2 (`unp/address VARCHAR(512)`) → `organizationDB.sql:10-11` ✅
+- Warehouse V2 (fridge min/max temperature + chk constraint) → `warehouseDB.sql:91-97` ✅
+- Warehouse V3 (organization_id в slot-таблицах + indexes) → `warehouseDB.sql:63-119` ✅
+- Product V2-V8 (inventory_events / product_operation_events / shipment_request strategy + shipment_type + currency + document_layout + domestic_document_kind + recipient_country + recipient_gln / document_counters / generated_documents / operation_status / receipt_session) → `productDB.sql` ✅
+- Product V9 (backfill `unit_sku`) — only UPDATE, для свежей БД не нужно (новые записи получают unit_sku через @PrePersist в `Inventory`).
+
+**Удалено:** 4 директории `backend/<service>/src/main/resources/db/`. **Новое правило:** при изменении схемы — править только `sql-scripts/<service>DB.sql`. Никаких новых V*.sql файлов.
 
 ---
 
@@ -918,39 +1660,86 @@ document-service/src/main/java/by/bsuir/documentservice/rpa/
 4. Печать наклеек / штрихкодов (ZPL-генератор + endpoint в `document-service`).
 5. Endpoint `/api/products/{id}/history` — лента событий по товару из Event Store (UI-таб).
 6. Chaos-тест Saga: остановить product-service между `BATCH_CREATION` и `INVENTORY_UPDATE`, проверить recovery.
-7. Rate limiting на api-gateway — закрывается через **I5 (c)**.
+7. ~~Rate limiting на api-gateway~~ ✅ закрыт через §4 I5 (c) — 2026-05-17.
 8. Валидация бизнес-правил BR-3..BR-6 как Strategy + Chain of Responsibility (`PlacementValidator`).
 9. Импорт справочников из Excel (товары, поставщики).
 10. e2e-тесты Playwright: логин, приёмка, отгрузка с FEFO, инвентаризация, переоценка, списание.
 
 ---
 
-## 6. Дорожная карта (только открытое)
+## 5.1 Test coverage (2026-05-15)
 
-| Sprint | Цель | Оценка |
-|---|---|---|
-| ~~**§1.5 P0** 🔥~~ ✅ DONE | Фундамент: MinIO + GeneratedDocument + DocumentNumberService + Workflow PAUSED + 3 endpoint'а (complete/discrepancy/approve) | сделано 2026-05-13 |
-| ~~**HP-1** 🔥~~ ✅ DONE | 10 типов документов (5 generator'ов + cleanup мёртвых case'ов) | сделано 2026-05-13 |
-| ~~**HP-2**~~ ✅ DONE | Backend (product-service 10 + warehouse-service 3 endpoint'ов) + фронт (5 страниц: SuppliesPage, ShipPage requests, ReceivePage history, AnalyticsPage Operations, DocumentsPage). Все используют эталон Suppliers (TablePagination, page/rowsPerPage state, content/totalElements split). | сделано 2026-05-13 |
-| ~~**Frontend миграция**~~ ✅ DONE | DocumentsPage (`/api/document-registry`) + кнопки workflow на ReceivePage («Принять без замечаний» / «Зафиксировать расхождение» + DiscrepancyDialog с типами SHORTAGE/SURPLUS/DEFECT/MISGRADE/OTHER) | сделано 2026-05-13 |
-| ~~**§1.5.C Export flow**~~ ✅ DONE | Backend (V7+enums+saga.documentIds+MinIO compensation) + фронт ShipPage CreateRequestDialog (чекбокс/radio/dropdown + summary). Inventory tooltip (Q6) — отдельный мелкий таск | сделано 2026-05-13 |
-| **§2 RPA** | (1) ⏳ read-only парсинг 1С через WinAppDriver — ждём доступа к 1С. (2) ✅ Office-bot DONE 2026-05-13: bot + endpoint `POST /api/documents/office/fill` + **интеграция как primary канал** через `X-Generation-Mode: auto\|rpa` header + `RpaTemplateBinding` (proof-of-concept на receipt-order) + fallback на POI с уведомлением + Settings UI toggle | 1.5-2 дня (только 1С + binding для остальных 9 типов) |
-| **+ парал.** | F5 design system | 1-2 дня (фронт) |
+**Текущее состояние:** 473 backend-теста, **51.7% INSTRUCTION / 40% BRANCH** aggregate JaCoCo. Client-тестов **нет** (CRA placeholder `App.test.js` удалён 2026-05-15 — он никогда не работал в этом проекте: `react-router-dom@7` ESM-only, CRA Jest не транспилит).
 
-**Порядок (следующая сессия):**
-1. ~~**§1.5.D** DocumentNumberService~~ ✅
-2. ~~**§1.5.A** MinIO + GeneratedDocument~~ ✅
-3. ~~**§1.5.B** Workflow PAUSED + всегда-акт~~ ✅
-4. ~~**HP-1** 5 generator'ов POI + picking-list PDF + cleanup мёртвых типов~~ ✅ DONE 2026-05-13
-5. ~~**HP-2 product-service** — 10 endpoint'ов paginated~~ ✅ DONE 2026-05-13
-6. ~~**HP-2 warehouse-service** — 3 endpoint'а (Warehouse.getAll/getByOrg, Rack.getRacksByWarehouse). `getCellsByRack`/`getSlotsByRack` оставлены без пагинации (polymorphic by rack.kind)~~ ✅ DONE 2026-05-13
-7. ~~**HP-2 Frontend** — 5 страниц (SuppliesPage, ShipPage, ReceivePage history, AnalyticsPage Operations, DocumentsPage)~~ ✅ DONE 2026-05-13.
-8. ~~**Frontend миграция §1.5**~~ ✅ DONE 2026-05-13. DocumentsPage + кнопки workflow на ReceivePage + DiscrepancyDialog.
-9. **§1.5.C** Export flow (P1).
-10. **§2 RPA**: ~~RPA-2 (Office)~~ ✅ DONE 2026-05-13 → **RPA-1** (read-only парсинг 1С через WinAppDriver, после получения доступа к 1С).
+**JaCoCo exclusions** (`backend/build.gradle ext.jacocoExcludes` + аналог в `jacocoAggregateReport`):
+- `**/config/**` — Spring boilerplate (SecurityConfig, RabbitMQConfig, JwtAuthenticationFilter, и т.д.)
+- `**/dto/**` — Java records (Lombok-generated)
+- `**/model/entity/**` — JPA entities
+- `**/model/event/**` — domain event records
+- `**/model/enums/**` — Lombok-generated enum-классы
+- `**/rpa/**` — RPA generator'ы (POI/PDFBox/WinAppDriver/JACOB — частично Windows-only, тестируется через E2E)
+- `**/exception/**` — `AppException` factory-методы (тривиальные)
+- `**/client/**` — Feign-style cross-service клиенты (мокаются в тестах потребителей)
+- `**/*Application.class` — Spring Boot main
 
-**Минимум до защиты:** §1.5 P0 + HP + §2 RPA-2 + RPA-1 = **~2.5-3 недели**.
-**Полный план:** + §1.5 P1 + F5 + I5 = **~3-3.5 недели**.
+**До 80% — отложено.** Подход «только exclusions» (выбран 2026-05-15) дал потолок ~51.7%. Чтобы добить до 80% — нужно ~150-170 новых тестов на:
+- `productservice.service` (52% → 80%, ~50 тестов, FEFO/ABC/Inventory/Saga/Supply)
+- `productservice.controller` (18% → 80%, ~50 тестов, REST handlers + `@WebMvcTest`)
+- `documentservice.service` + `documentservice.controller` (11%/1% → 70%, ~30 тестов)
+- `ssoservice.service` + `organizationservice.service` (66%/69% → 80%, ~25 тестов)
+Оценка: 1.5-2 дня. Включается, когда сценарии RPA-1/I5 будут закрыты.
+
+**Per-service `jacocoTestCoverageVerification.minimum = 0.50`** — текущее условие проходит для всех 5 сервисов.
+
+---
+
+## 6. Дорожная карта (актуально на 2026-05-18)
+
+**До защиты, по приоритету:**
+
+| # | Задача | Статус | Оценка |
+|---|---|---|---|
+| 1 | **§4.2 End-to-end docker-compose** — поднять весь стек, прогнать BP-1/BP-2/BP-5 через UI | ❌ обязательно | 1-2 ч |
+| 2 | **§2.6 RPA-1 1С** — E2E прогон с калибровкой XPath на `utdemo` | ⏳ ждёт Windows + WinAppDriver | 1.5-2 дня |
+| 3 | **§2.8 SMTP/VPN на защите** — outbound SMTP блок у ISP подтверждён 2026-05-18, нужен VPN в аудитории ИЛИ MailHog-fallback под docker-compose profile | ⏳ environmental | 0.5-1 ч на MailHog-fallback |
+| 4 | **§2.28 JWT private-key ротация** (private key в git history) | ❌ security, рекомендую вариант A (regenerate) | 10 мин |
+| 5 | **§2.21 CORS** на api-gateway + SSO (hardcoded на `localhost:3000`) | ❌ отложен | 1 ч |
+| 6 | **§2.22 OAuth secrets** ротация + env-var (в `application.properties` plain) | ❌ отложен (security) | 1-2 ч |
+| 7 | **§5.1 Coverage 80%** | ⏳ 73.4% после session 2026-05-17 (+25% к baseline) | 0.5-1 день до 80% |
+
+**Опциональные хвосты (минор, не блокеры):**
+- `APP_DB_ENCRYPTION_KEY` пустой в `.env` → AES в pass-through режиме (SSO `login_audit.ip`, product `erp_connection.password_enc` шифруются «понарошку»).
+- Postgres/RabbitMQ пароли без `${ENV:default}`-override в `application.properties` (4 сервиса).
+- `mock-erp` endpoint hardcoded на `http://localhost:8040` (`RpaHtmlExtractorImpl` / `ApiExtractorImpl`) — в Docker сетевое имя `document-service:8040`, в docker-compose env override отсутствует.
+- `AuthorizationServerConfig:52` ссылается на `http://127.0.0.1:8080/code` (legacy OAuth2 authorization-server, порт 8080 не используется).
+- `spring.jpa.show-sql=true` в `organization-service` (шум в логах).
+- `client/build/` коммитится в submodule (должно быть в `.gitignore`).
+
+**Закрыто в session 2026-05-16/17/18** (см. §2.x для подробностей):
+- §2.7 ERP login + default mode → onec
+- §2.7.bis ERP credentials в БД (AES + CRUD + UI)
+- §2.8 email (URL фикс + Gmail SMTP через JavaMailSender + .env wiring); 2026-05-18 диагноз: ISP блокирует SMTP outbound, проверено VPN → работает
+- §2.9 unit_sku auto-gen + batch auto-create
+- §2.10 + §2.16 Map.of NPE audit
+- §2.11 Eureka 127.0.0.1 hardcoded
+- §2.12 OAuth callback URLs → @Value
+- §2.13 JWT issuer → @Value
+- §2.14 EmployeeAnalyticsService cleanup
+- §2.15 Inventory PESSIMISTIC_WRITE
+- §2.17 AnalyticsReportService ABC в PDF
+- §2.18 OperationController.findById org-фильтр
+- §2.19 @Scheduled replicas=1 в k8s
+- §2.20 logging.level правильные пакеты
+- §2.23 SSO smoke-test (2026-05-17)
+- §2.24 frontend BACKEND_URL
+- §2.25 JwtAuthenticationFilter @Component
+- §2.26 keystore untracked + gitignored (2026-05-18)
+- §2.27 gateway filter reactive-fix (blocking-on-eventloop) + self-heal на keypair-mismatch (2026-05-18)
+- §4 I5 (Redis JWT cache + rate-limit removed; hotfix 2026-05-18)
+- §4.1 Flyway-миграции удалены (parity с sql-scripts подтверждена)
+
+**Минимум до защиты:** §4.2 docker-compose check + §2.6 RPA-1 + §2.8 SMTP-стратегия = **2-2.5 дня**.
+**Желательно:** + §2.21 CORS + §2.22 OAuth secrets + §2.28 keypair rotation = **+0.5 дня**.
 
 ---
 
