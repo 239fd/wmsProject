@@ -673,6 +673,26 @@ Caffeine выпилен. JWT public-key cache → Redis (`gw:jwt-public-key`, TT
 
 ---
 
+## 5.2 Известные дефекты после UI-теста 2026-05-19 🐞 OPEN
+
+Найдены при ручном прогоне UI (DIRECTOR-флоу: приёмка / переоценка / списание / инвентаризация / документы / mode=rpa).
+
+| # | Файл/место | Описание | Статус | Приоритет |
+|---|---|---|---|---|
+| D-1 | `document-service/client/OrganizationClient` → `organization-service` | Internal HTTP-вызов из document-service в org-service отдаёт **403** даже после добавления `X-User-Role: DIRECTOR` + `X-Organization-Id`. У org-service в `/api/organizations/{id}` есть RBAC, который дополнительно проверяет orgId самого пользователя по тенант-фильтру. **Workaround:** клиент возвращает `new HashMap<>()` → `DataEnrichmentService` идёт с пустыми реквизитами. UI получает документ без названия организации в шапке. **Fix-направления:** либо завести `/api/internal/organizations/{id}` (whitelist в JwtFilter), либо передавать в OrganizationClient токен service-account. | ❌ OPEN | P1 |
+| D-2 | `product-service/InventoryCheckService.completeInventory` | После `POST /api/inventory-check/{id}/complete` инвентаризационная опись **не появляется** в `generated_documents` (хотя код `documentRegistryService.register("inventory-report", …)` встроен, ошибка глушится в catch). Гипотезы: `session.organizationId == null` для старых сессий / `DocumentClient.fetch` падает с тем же 403 что в D-1 / MinIO bucket недоступен. **Нужно**: посмотреть логи product-service при complete, искать `ERROR Не удалось сгенерировать инвентаризационную опись` или `WARN Сессия ... без organizationId`. | ❌ OPEN | P1 |
+| D-3 | `document-service/rpa/DocumentRpaService` (.doc / .RTF / legacy .xls шаблоны) | Apache POI HWPF (`blank-invojs.doc`, `CMR.doc`) и String.replace по RTF (`Акт приемки.RTF`) производят файлы, которые Word/Excel не открывают. **Workaround сделан 2026-05-19**: `DocumentService.generate` для программного канала всегда возвращает PDF (PDFBox + DejaVuSans). `?format=xlsx`/`?format=docx` игнорируется. **Долгосрочный fix:** конвертировать `.doc`/`.RTF` шаблоны в `.docx`, переписать `generateInvoice`/`generateCmr`/`generateReceiptActRtf` с XWPFDocument. | 🟡 WORKAROUND | P2 |
+| D-4 | `rpa-service/python/rpa/api.py` Content-Disposition latin-1 crash | Кириллица в filename падала со `UnicodeEncodeError`. **Закрыто 2026-05-19**: RFC 5987 `filename*=UTF-8''<percent>` + ASCII fallback. Нужен **рестарт rpa-service**. | ✅ FIXED | — |
+| D-5 | `DocumentRegistryService.fileFormat` по `channel` | Раньше `channel="rpa"` → всегда `xlsx`, но Python для `write-off-act` / `cmr` / `invoice` отдаёт `.docx`. Excel/Word отказывались открывать. **Закрыто 2026-05-19**: `detectFileFormat()` по Content-Type / filename / magic bytes из `DocumentClient.Fetched`. | ✅ FIXED | — |
+| D-6 | `InventoryCheckService` логика недостачи | При недостаче (actual < expected) автоматически уменьшалась `inventory.quantity` И помечалось к списанию → нечего списывать в WriteoffPage. **Закрыто 2026-05-19**: при недостаче `quantity` не трогаем, только `markedForWriteoff=true`. Бухгалтер списывает через акт → `quantity` уменьшается. По НСБУ N 126. | ✅ FIXED | — |
+| D-7 | Frontend Inventory ввод дробных | `step="0.01"` → требовалась дробь с 2 знаками. **Закрыто 2026-05-19**: `step="any"`, placeholder «например 12.5». Точка обязательна (HTML number input не принимает запятую). | ✅ FIXED | — |
+| D-8 | Inventory таблицы Списание/Переоценка показывали UUID товара | **Закрыто 2026-05-19**: `InventoryResponse` расширен `productName` + `productSku`, `InventoryService` делает batch-fetch `ProductReadModel`. Фронт показывает «Стинол двухкамерный» + русский Chip статуса (AVAILABLE → Доступен и т.д.). | ✅ FIXED | — |
+| D-9 | Gateway 401 без тела → axios «Request failed with status code 401» | **Закрыто 2026-05-19**: JSON-тело `{status, error: "Требуется авторизация", message: "Сессия истекла. Войдите заново."}`. | ✅ FIXED | — |
+| D-10 | product-service `GlobalExceptionHandler` отдавал `"Internal Server Error"` / `"Validation Failed"` на английском | **Закрыто 2026-05-19**: `localizedStatus(HttpStatusCode)` → русские reason phrases, `error: "Ошибка валидации" / "Внутренняя ошибка сервера"` и т.д. | ✅ FIXED | — |
+| D-11 | Settings RPA-индикатор всегда «РПА-бот недоступен» | Фронт звал удалённый `/api/documents/office/health` → 404. **Закрыто 2026-05-19**: новый endpoint `GET /api/documents/rpa/health` проксирует `PythonRpaClient.isAvailable()` → `{enabled, channel, reason}`. UI переписан под Python rpa-service. | ✅ FIXED | — |
+
+---
+
 ## 6. Дорожная карта (актуально на 2026-05-19)
 
 **До защиты, по приоритету:**
