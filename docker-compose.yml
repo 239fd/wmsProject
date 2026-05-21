@@ -7,8 +7,8 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_DB: user_db
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     ports:
       - "5432:5432"
     volumes:
@@ -17,7 +17,7 @@ services:
     networks:
       - wms-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d user_db"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres} -d user_db"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -28,8 +28,8 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_DB: organization_db
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     ports:
       - "5433:5432"
     volumes:
@@ -38,7 +38,7 @@ services:
     networks:
       - wms-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d organization_db"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres} -d organization_db"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -49,8 +49,8 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_DB: warehouse_db
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     ports:
       - "5434:5432"
     volumes:
@@ -59,7 +59,7 @@ services:
     networks:
       - wms-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d warehouse_db"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres} -d warehouse_db"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -70,8 +70,8 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_DB: product_db
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     ports:
       - "5435:5432"
     volumes:
@@ -80,7 +80,7 @@ services:
     networks:
       - wms-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d product_db"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres} -d product_db"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -110,8 +110,8 @@ services:
       - "5672:5672"
       - "15672:15672"
     environment:
-      RABBITMQ_DEFAULT_USER: guest
-      RABBITMQ_DEFAULT_PASS: guest
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-guest}
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     networks:
@@ -189,6 +189,7 @@ services:
       SSO_SERVICE_URL: http://sso-service:8000
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      APP_CORS_ALLOWED_ORIGINS: ${APP_CORS_ALLOWED_ORIGINS:-http://localhost:3000}
     depends_on:
       eureka-server:
         condition: service_healthy
@@ -214,20 +215,26 @@ services:
     environment:
       SERVER_PORT: 8000
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-sso:5432/user_db
-      SPRING_DATASOURCE_USERNAME: postgres
-      SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-postgres}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       SPRING_JPA_HIBERNATE_DDL_AUTO: update
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_RABBITMQ_PORT: 5672
-      SPRING_RABBITMQ_USERNAME: guest
-      SPRING_RABBITMQ_PASSWORD: guest
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_DEFAULT_USER:-guest}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS:-guest}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka
       EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
       APP_FRONTEND_URL: ${APP_FRONTEND_URL:-http://localhost:3000}
+      APP_CORS_ALLOWED_ORIGINS: ${APP_CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      YANDEX_OAUTH_CLIENT_ID: ${YANDEX_OAUTH_CLIENT_ID:-}
       YANDEX_OAUTH_CLIENT_SECRET: ${YANDEX_OAUTH_CLIENT_SECRET:-}
+      YANDEX_OAUTH_REDIRECT_URI: ${YANDEX_OAUTH_REDIRECT_URI:-http://localhost:8765/api/oauth/callback/yandex}
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
       GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
+      GOOGLE_OAUTH_REDIRECT_URI: ${GOOGLE_OAUTH_REDIRECT_URI:-http://localhost:8765/api/oauth/callback/google}
+      APP_DB_ENCRYPTION_KEY: ${APP_DB_ENCRYPTION_KEY:-}
     depends_on:
       postgres-sso:
         condition: service_healthy
@@ -257,13 +264,13 @@ services:
     environment:
       SERVER_PORT: 8010
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-org:5432/organization_db
-      SPRING_DATASOURCE_USERNAME: postgres
-      SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-postgres}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       SPRING_JPA_HIBERNATE_DDL_AUTO: update
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_RABBITMQ_PORT: 5672
-      SPRING_RABBITMQ_USERNAME: guest
-      SPRING_RABBITMQ_PASSWORD: guest
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_DEFAULT_USER:-guest}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS:-guest}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka
       EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
       MAIL_HOST: ${MAIL_HOST:-smtp.gmail.com}
@@ -271,6 +278,9 @@ services:
       MAIL_USERNAME: ${MAIL_USERNAME:-}
       MAIL_PASSWORD: ${MAIL_PASSWORD:-}
       MAIL_FROM_NAME: ${MAIL_FROM_NAME:-WMS}
+      MAIL_SMTP_AUTH: ${MAIL_SMTP_AUTH:-true}
+      MAIL_STARTTLS: ${MAIL_STARTTLS:-true}
+      MAIL_STARTTLS_REQUIRED: ${MAIL_STARTTLS_REQUIRED:-true}
       APP_FRONTEND_URL: ${APP_FRONTEND_URL:-http://localhost:3000}
     depends_on:
       postgres-org:
@@ -299,15 +309,28 @@ services:
     environment:
       SERVER_PORT: 8030
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-product:5432/product_db
-      SPRING_DATASOURCE_USERNAME: postgres
-      SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-postgres}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       SPRING_JPA_HIBERNATE_DDL_AUTO: update
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_RABBITMQ_PORT: 5672
-      SPRING_RABBITMQ_USERNAME: guest
-      SPRING_RABBITMQ_PASSWORD: guest
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_DEFAULT_USER:-guest}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS:-guest}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka
       EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://minio:9000}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-wmsadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-wmsadmin12345}
+      MINIO_BUCKET: ${MINIO_BUCKET:-wms-documents}
+      RPA_PYTHON_ENABLED: ${RPA_PYTHON_ENABLED:-true}
+      RPA_PYTHON_BASE_URL: ${RPA_PYTHON_BASE_URL:-http://host.docker.internal:8060}
+      RPA_PYTHON_TIMEOUT: ${RPA_PYTHON_TIMEOUT:-300}
+      ERP_EXTRACTION_MODE: ${ERP_EXTRACTION_MODE:-onec}
+      ERP_API_BASE_URL: ${ERP_API_BASE_URL:-http://document-service:8040/mock-erp}
+      ERP_RPA_BASE_URL: ${ERP_RPA_BASE_URL:-http://document-service:8040/mock-erp}
+      APP_DB_ENCRYPTION_KEY: ${APP_DB_ENCRYPTION_KEY:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres-product:
         condition: service_healthy
@@ -335,13 +358,13 @@ services:
     environment:
       SERVER_PORT: 8020
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-warehouse:5432/warehouse_db
-      SPRING_DATASOURCE_USERNAME: postgres
-      SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-postgres}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       SPRING_JPA_HIBERNATE_DDL_AUTO: update
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_RABBITMQ_PORT: 5672
-      SPRING_RABBITMQ_USERNAME: guest
-      SPRING_RABBITMQ_PASSWORD: guest
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_DEFAULT_USER:-guest}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS:-guest}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka
       EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
     depends_on:
@@ -372,6 +395,11 @@ services:
       SERVER_PORT: 8040
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka
       EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
+      RPA_PYTHON_ENABLED: ${RPA_PYTHON_ENABLED:-true}
+      RPA_PYTHON_BASE_URL: ${RPA_PYTHON_BASE_URL:-http://host.docker.internal:8060}
+      RPA_PYTHON_TIMEOUT: ${RPA_PYTHON_TIMEOUT:-120}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       eureka-server:
         condition: service_healthy

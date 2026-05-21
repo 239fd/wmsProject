@@ -34,7 +34,6 @@
 
 **Осталось открытое:**
 - **§2 RPA-миграция** — WinAppDriver-стек удалён, заменён Python `rpa-service` (FastAPI, pywinauto + win32com). Готово: `backend/rpa-service/`, document-service интеграция. Осталось: product-service интеграция (`PythonRpaExtractor`), config-properties, e2e прогон. Подробности в §2.
-- **§2.8 ENV-BOUND** — Gmail SMTP работает через `JavaMailSender` (port 587 STARTTLS), но ISP пользователя блокирует исходящие SMTP-порты (25/465/587 ко всем mail-провайдерам, проверено 2026-05-18). Решение: VPN на машине отправителя или MailHog-fallback. Защита: либо VPN в аудитории, либо локальный MailHog как demo-канал.
 - **§2.21** CORS gateway, **§2.22** OAuth secrets, **§2.23** SSO smoke-test — отложены пользователем.
 - **§2.28** Keystore ротация — приватный ключ JWT был закоммичен в git history (`keystore/jwt-private.key`). Сейчас untracked + gitignored (2026-05-18, см. §2.26), но в истории остался. Полная очистка требует `git filter-repo` или ротации keypair.
 - **§4.2 End-to-end docker-compose** — обязательная проверка перед защитой.
@@ -693,6 +692,98 @@ Caffeine выпилен. JWT public-key cache → Redis (`gw:jwt-public-key`, TT
 
 ---
 
+## 5.3 Правки директорского флоу 2026-05-21 ✅ DONE 2026-05-21
+
+Получены ручным прохождением UI пользователем (директор-флоу). 7 базовых задач закрыты + 3 раунда правок по фидбэку. Все правки подтверждены проходом UI:
+
+- **Раунд 1** (DIR-1.1 … DIR-1.6 + DIR-BUG-SESS): жёсткий guard DIRECTOR без org · countdown подтверждение удаления · каскадное удаление DIRECTOR/org/employees/warehouses/products/MinIO · УНП→ИНН · статус+нагрузка ячеек · FRIDGE→storageConditions + Product.requiredStorageCondition · DELETE login_audit при terminate + Redis cleanup.
+- **Раунд 2**: блок «Канал генерации документов» удалён из настроек (выбор канала только в операциях) · грузоподъёмность на уровне стеллажа для всех 3 типов (SHELF/CELL/PALLET), слоты — только габариты · защита от exception в Redis pattern-scan завершения сессий (try/catch на BCrypt.matches).
+- **Раунд 3**: `EmailService.EmailDeliveryException` с дружественным сообщением вместо SMTP-трейсбэка · `WarehouseAnalyticsService` пересобран под новую модель (`racksByKind`, `racksByStorageConditions`, `totalSlots/occupiedSlots/utilizationPercent` через `ProductClient.getCellsLoad`) · `AnalyticsPage` Обзор + вкладка «Склады» подключены к новым полям + сводная карточка по сети складов с Chip'ами типов и температурных зон.
+
+Дальнейшие правки в этой сессии — по флоу **Работника**.
+
+| # | Файл/место | Описание | Статус | Приоритет |
+|---|---|---|---|---|
+| DIR-1.1 | `client/src/routes/AppRouter.js`, `MainNavbar.js`, `MainPage.js` | DIRECTOR без `organizationId` сейчас попадает на `/analytics` и др. Нужен жёсткий guard `OrgRequiredRoute`: разрешены только `profile/settings/organization`. В меню скрыть недоступные пункты. | ✅ FIXED 2026-05-21 | P1 |
+| DIR-1.2 | `client/src/components/shared/ConfirmDialog.js`, `pages/SettingsPage.js` | При удалении аккаунта 10-секундный таймер сейчас отображается как `Удалить (5)` — выглядит как баг сети. Добавить `LinearProgress` + явный текст «Кнопка станет активной через N с». | ✅ FIXED 2026-05-21 | P2 |
+| DIR-1.3 | SSO + organization-service + warehouse-service + product-service + MinIO | При удалении DIRECTOR-аккаунта сейчас организация архивируется (статус ARCHIVED). Заменить на **полное каскадное удаление**: org + employees-пользователи + warehouses + racks + cells + products + batches + inventory + supplies + suppliers + operations + documents (включая MinIO). Email директора освобождается для повторной регистрации. Опубликовать новое событие `organization.deleted` (вместо `organization.archived`). | ✅ FIXED 2026-05-21 | P0 |
+| DIR-1.4 | `OrganizationService:56,155`, `SupplierService:55,86`, `SupplierController:62`, request-DTO @NotBlank/@Pattern/@Schema | В пользовательских сообщениях «УНП» заменить на «ИНН» (по `project_belarus_compliance` — в UI пишем ИНН, в API-DTO поле `unp` остаётся). | ✅ FIXED 2026-05-21 | P2 |
+| DIR-1.5 | `warehouse-service/RackService`, `product-service` `/api/internal/inventory/cells-load`, `client/OrganizationPage.js` | Таблица ячеек/полок/паллет-мест слишком пустая. Добавить колонки «Статус» (Доступна/Заполнена) и «Загрузка» (количество единиц на ячейке). Точный вес не считаем — вариант B (просто `itemsCount` через cross-service internal endpoint). | ✅ FIXED 2026-05-21 | P2 |
+| DIR-1.6 | `RackKind` enum + `Fridge` entity + `StorageConditions` enum + `Product.requiredStorageCondition` + `PlacementService` + `RackDialog.js` | Убрать `FRIDGE` как тип стеллажа. Добавить отдельный атрибут «Условия хранения» (ROOM/COOL/FRIDGE/FREEZER с температурными подписями). Привязать `Product.requiredStorageCondition` и фильтровать placement в FEFO. Схема БД пересоздаётся через wipe (вариант b — БД пустая, миграции не нужно). | ✅ FIXED 2026-05-21 | P1 |
+| DIR-BUG-SESS | `SSOService/ProfileService.terminateSession`, `SettingsPage.js` | При завершении сессии запись в `login_audit` только `is_active=false` (UPDATE), refresh token в Redis не трогается. У текущей сессии вообще нет кнопки «Завершить». Поведение: `terminateSession` делает **DELETE** + если сессия = текущая → удалить Redis-токен + frontend делает logout с редиректом. | ✅ FIXED 2026-05-21 | P1 |
+
+Acceptance: все 7 пунктов закрыты, UI прогон директор-флоу не показывает регрессий.
+
+---
+
+## 5.4 Правки флоу Кладовщика (WORKER) — блок 1 ✅ DONE 2026-05-21
+
+**Цель**: объединить поставки и приёмку в один флоу, перестать терять данные при RPA-парсинге, добавить JSON-импорт, поддержать формат доставки (паллет/коробка) и quantityOnly-поставки.
+
+### Концептуальный сдвиг
+
+`PlannedDelivery` (плоская «одна row = одна позиция») **сносится полностью**. Парсинг (1С и JSON) пишет напрямую в **многострочную** `Supply` + `SupplyItem` со статусом `PLANNED`. Worker видит единый список поставок и принимает их. Это закрывает W-1.1, W-1.2 (включая «куда уходят данные»), и убирает дублирующиеся страницы `/main/supplies` / `/main/erp-extractor`.
+
+### Согласованные решения (пользователь подтвердил 2026-05-21)
+
+1. `PlannedDelivery` — выпилить полностью (entity + repo + controller + sql-таблица).
+2. `quantityOnly` поставка: worker свободно выбирает товары при приёмке; sum(actualQty)≤plannedTotal — мягкое предупреждение, не блокер.
+3. JSON-схема: обязательные поля (supplier+items+product+batch+packaging+финансы) — жёсткая валидация; опциональные блоки (transport/commission/international/writeoff) — принимаются и пишутся в `Supply.snapshot JSONB`, чтобы данные не терялись если поставщик пришлёт полный JSON.
+4. ErpExtractorPage сносим (URL RPA — только в `application.properties`).
+5. Маршрут — `/main/receive` (один пункт в навбаре «Поставки»). `/main/supplies` и `/main/erp-extractor` удаляются.
+
+### Задачи (трекинг)
+
+| # | Слой | Файлы/место | Описание | Статус |
+|---|---|---|---|---|
+| W1-A | Backend (model) | `Supply`/`SupplyItem`/`ProductBatch`, enum `PackagingType`, `productDB.sql` | `Supply`+`externalId`/`source`/`quantityOnly`/`supplierName`/`currency`/`totalAmount`/`snapshot JSONB`. `SupplyItem`: `productId` nullable + snapshot товара + плановая партия + финансы + `packagingType` + `markedForWriteoff`. `ProductBatch.packagingType`. | ✅ DONE |
+| W1-B | Backend (cleanup) | `PlannedDelivery*`, `ErpConnection*`, `ErpExtractor/Connection`-контроллеры, `planned_deliveries`+`erp_connection` SQL | Снесены entity/repo/controller/service + legacy `RpaHtmlExtractorImpl`/`ApiExtractorImpl` + интерфейс `PlannedDeliveryExtractor`. `OrganizationDeletionListener` — обновлены имена таблиц (`supplies`/`suppliers`). | ✅ DONE |
+| W1-C | Backend (service) | `service/SupplyImportService.java` (новый) + `dto/import_/SupplyDto.java` | Единый импорт: найти/создать Supplier по unp/inn (новые методы в `SupplierRepository`), найти/создать Product по sku, создать Supply (PLANNED) + items. Идемпотентно по `(orgId, externalId)`. | ✅ DONE |
+| W1-D | Backend (RPA) | `rpa/PythonRpaExtractor.java`, `rpa/ErpExtractorJob.java`, `rpa/SupplyExtractor.java` | Новый интерфейс `SupplyExtractor` возвращает `List<SupplyDto>`. `PythonRpaExtractor` парсит `supply_full.json` через snake_case ObjectMapper, дополнительные блоки (transport/commission/international/…) кладёт в `snapshot`. `ErpExtractorJob` делегирует в `SupplyImportService`. | ✅ DONE |
+| W1-E | Backend (API) | `controller/SupplyImportController.java` (новый), `config/SupplyImportMapperConfig.java`, `resources/sample-supply.json` | `POST /api/supplies/import-1c` (DIRECTOR/WORKER), `POST /api/supplies/import-json` (multipart + ручная валидация обязательных полей), `GET /api/supplies/sample-json` (отдаёт файл-пример). Без новой зависимости — Jackson + ручные проверки. | ✅ DONE |
+| W1-F | Backend (API) | `controller/SupplyController.java`, `dto/request/CreateSupplyRequest.java`, `dto/response/SupplyResponse.java`, `service/SupplyService.java` | Расширили DTO под snapshot товара + плановую партию + финансы + `packagingType` + `quantityOnly`. `SupplyService.create` корректно обрабатывает оба режима. | ✅ DONE |
+| W1-G | Client (routes) | `routes/AppRouter.js`, `components/layout/MainNavbar.js`, `pages/MainPage.js`, `components/shared/PageBreadcrumbs.js`, `config/api.js`, удалены `SuppliesPage`/`ErpExtractorPage`/`ExtractDataDialog`/`erpConnectionService`/`erpExtractorService` | `/main/supplies` и `/main/erp-extractor` → `<Navigate to="/main/receive">`. В навбаре один пункт «Поставки». Сегмент `receive` → label «Поставки». | ✅ DONE |
+| W1-H | Client (dialogs) | `components/receive/ImportSupplyDialog.js`, `services/supplyService.js` (`importFrom1c`/`importFromJson`/`downloadSampleJson`) | Меню «Запарсить ▾» (Из 1С / Из JSON / Скачать пример) + file picker + POST `/import-json` через multipart. Результат показывается с разбивкой по imported/skipped/errored + детали ошибок. | ✅ DONE |
+| W1-I | Client (dialogs) | `components/receive/CreateSupplyDialog.js` | Переключатель `quantity-only` / детальный. Детальный — строки product/sku/qty/expectedExpiry/packagingType/storageConditions. Quantity-only — только число позиций. | ✅ DONE |
+| W1-J | Client (wizard) | `pages/ReceivePage.js` | Добавлена колонка «Упаковка» (PALLET/BOX/CRATE/EACH) на каждом item, передаётся в payload приёмки. Кнопка «Дублировать» рядом с «Удалить» создаёт ещё одну строку того же товара с пустыми batch/expiry/qty — для разных партий с разными сроками. | ✅ DONE |
+| W1-K | Docs | `PLAN.md`, `backend/CLAUDE.md`, `client/CLAUDE.md`, `CLAUDE.md` | Зафиксировано. CLAUDE.md обновляются ниже. | ✅ DONE |
+
+### Сводка по структуре `Supply`/`SupplyItem` (новая)
+
+```
+Supply
+├── supplyId, organizationId, supplierId, supplierName
+├── warehouseId, status (PLANNED/IN_PROGRESS/ACCEPTED/REJECTED/CANCELLED)
+├── externalId (UNIQUE per org), source (1C-Python/JSON/MANUAL), quantityOnly
+├── expectedDate, actualDate, totalItems
+├── currency, totalAmount
+├── snapshot JSONB ← transport/commission/international/… из supply_full.json
+└── items[] (если не quantityOnly)
+       └── SupplyItem
+            ├── productId (NULLABLE — материализуется при приёмке)
+            ├── snapshot: productName, sku, barcode, category, unitOfMeasure, manufacturer, storageConditions
+            ├── expectedQty, actualQty
+            ├── unitPrice, vatRate, vatAmount, totalAmount
+            ├── packagingType (PALLET/BOX/CRATE/EACH)
+            ├── batch snapshot: batchNumber, manufactureDate, expiryDate, purchasePrice
+            └── markedForWriteoff, notes
+```
+
+### Что НЕ закрыто и осталось в backlog
+
+- Backend `ReceiveSagaService.createReceiveSession` пока не пробрасывает `packagingType` в `ProductBatch` (поле в SQL/entity есть, но саму запись делает saga step). Сейчас payload передаётся, бэк его игнорирует — нужно прокинуть через `ReceiveItem` → `ProductBatch.packagingType` (W-2 backlog).
+- Wizard приёмки в quantity-only режиме пока работает «как обычно» — worker сам набирает позиции. Никакого спец-режима с пустыми planned items не сделали, потому что планов нет совсем. Если нужно — добавим валидацию `Σ(actualQty) ≤ plannedTotal` (W-2 backlog).
+- `Supply` deletes/wipe для `OrganizationDeletionListener` обновлён под имена `supplies`/`suppliers`/`supply_items` — но прежние имена `supply`/`supplier` исчезли вместе с этим. Если в проде имели старую схему — нужно пересоздать БД (мы и так пересоздаём).
+
+Acceptance: единая страница «Поставки», парсинг (1С/JSON) пишет полные supply+items без потерь, плановые поставки можно создать вручную (quantity-only/детально), приёмка работает с обоими режимами, packagingType виден в receive-формах и в реестре партий.
+
+### Что НЕ в этом блоке (отложено)
+
+- Полный набор полей `supply_full.json` (transport/commission/international) сохраняется в `Supply.snapshot` как JSONB, но UI его не показывает — это для финальной генерации документов.
+- Отгрузки (`/main/ship`) не трогаем — пользователь явно сказал.
+
+---
+
 ## 6. Дорожная карта (актуально на 2026-05-19)
 
 **До защиты, по приоритету:**
@@ -701,11 +792,10 @@ Caffeine выпилен. JWT public-key cache → Redis (`gw:jwt-public-key`, TT
 |---|---|---|---|
 | 1 | **§2 RPA e2e smoke** — `.\smoke-rpa.ps1` на Windows с поднятым backend'ом + Python + 1С (опционально) | ⏳ ручная | 30 мин |
 | 2 | **§4.2 docker-compose E2E** — поднять весь стек, прогнать BP-1/BP-2/BP-5 через UI | ❌ обязательно | 1-2 ч |
-| 3 | **§2.8 SMTP/VPN на защите** — ISP блокирует SMTP outbound, нужен VPN в аудитории ИЛИ MailHog-fallback в docker-compose profile | ⏳ environmental | 0.5-1 ч |
-| 4 | **§2.28 JWT private-key ротация** (private key в git history) | ❌ security | 10 мин |
-| 5 | **§2.21 CORS** на api-gateway + SSO (hardcoded на `localhost:3000`) | ❌ отложен | 1 ч |
-| 6 | **§2.22 OAuth secrets** ротация + env-var | ❌ отложен (security) | 1-2 ч |
-| 7 | **§5.1 Coverage 80%** | ⏳ 73.4% (+25% к baseline) | 0.5-1 день |
+| 3 | **§2.28 JWT private-key ротация** (private key в git history) | ❌ security | 10 мин |
+| 4 | **§2.21 CORS** на api-gateway + SSO (hardcoded на `localhost:3000`) | ❌ отложен | 1 ч |
+| 5 | **§2.22 OAuth secrets** ротация + env-var | ❌ отложен (security) | 1-2 ч |
+| 6 | **§5.1 Coverage 80%** | ⏳ 73.4% (+25% к baseline) | 0.5-1 день |
 
 **Опциональные хвосты (минор):**
 - `APP_DB_ENCRYPTION_KEY` пустой → AES в pass-through.
@@ -717,7 +807,7 @@ Caffeine выпилен. JWT public-key cache → Redis (`gw:jwt-public-key`, TT
 
 **Закрыто (история — детали в git log):** §2.7-2.27 (ERP login, AES creds, email/SMTP, unit_sku, Map.of NPE, Eureka, OAuth/JWT @Value, EmployeeAnalytics cleanup, PESSIMISTIC_WRITE, ABC в PDF, org-фильтры, replicas=1, logging, BACKEND_URL, JwtAuthFilter @Component, keystore gitignored, gateway reactive-fix), §4 I5 Redis, §4.1 Flyway удалён, §1.5 документная подсистема, §2 RPA-миграция (Java + тесты) — всё 2026-05-13..2026-05-19.
 
-**Минимум до защиты:** smoke (0.5ч) + docker-compose check (1-2ч) + SMTP-стратегия (0.5-1ч) = **~2-3 часа**.
+**Минимум до защиты:** smoke (0.5ч) + docker-compose check (1-2ч) = **~1.5-2.5 часа**.
 **Желательно:** + CORS + OAuth secrets + keypair rotation = **+0.5 дня**.
 
 ---

@@ -84,8 +84,8 @@ Database-per-service microservices behind an API gateway. Service discovery via 
 | api-gateway | 8765 | — | Spring Cloud Gateway (WebFlux), Kotlin DSL build, JWT validation, Loki/Brave tracing |
 | SSOService | 8000 | `user_db` (PG :5432) + Redis | OAuth2 authorization server, JWT issuer (RS256), refresh tokens in Redis |
 | organization-service | 8010 | `organization_db` (PG :5433) | Org CRUD, employees, invitations (email + token), SMTP outbound |
-| warehouse-service | 8020 | `warehouse_db` (PG :5434) | Warehouses, racks (SHELF/CELL/FRIDGE/PALLET), pallet places |
-| product-service | 8030 | `product_db` (PG :5435) | Products/batches/inventory, supplies, suppliers, ship-requests, FEFO/FIFO, ABC analysis, ERP RPA extractor, persistent saga |
+| warehouse-service | 8020 | `warehouse_db` (PG :5434) | Warehouses, racks (SHELF/CELL/PALLET — `FRIDGE` убран 2026-05-21 в пользу `storageConditions` ROOM/COOL/FRIDGE/FREEZER на стеллаже), pallet places, `max_weight_kg` на стеллаже |
+| product-service | 8030 | `product_db` (PG :5435) | Products/batches/inventory, **унифицированные поставки** (`Supply`+`SupplyItem` с snapshot + JSONB-extras, source=MANUAL/JSON/1C-Python — `PlannedDelivery` снесён 2026-05-21), suppliers, ship-requests, FEFO/FIFO, ABC analysis, Python RPA extractor + JSON-import endpoint, persistent saga. `PackagingType` (PALLET/BOX/CRATE/EACH) на `SupplyItem` и `ProductBatch`. |
 | document-service | 8040 | — (stateless) | Document generation (PDF default, Apache POI XLS/DOCX templates available) |
 
 Internal package layout per service is uniform: `controller/ service/ repository/ model/ dto/ config/ exception/`. The product-service additionally has `saga/` and `validation/`; document-service has `rpa/` instead of `model/repository/`.
@@ -110,7 +110,16 @@ Long-running flows are orchestrated by `saga/SagaOrchestrator` with state persis
 **Compensation реально откатывает изменения** (D-PR-5 закрыт 2026-05-01). `compensate(...)` (receive) удаляет operation, откатывает `Inventory.quantity` (или удаляет inventory если стало ≤0), удаляет batch. `compensateShipSaga(...)` удаляет operation+staging, восстанавливает `Inventory.quantity`, освобождает `reservedQuantity`. `documentId` не трогает (document-service stateless). При сбое самой компенсации статус переходит в `COMPENSATION_FAILED` — требует ручного вмешательства.
 
 ### RabbitMQ topology
-Each service declares its own exchanges/queues/bindings in `<service>/config/RabbitMQConfig.java`. Conventions: one `TopicExchange` per service (`sso.exchange`, `organization.exchange`, `warehouse.exchange`), routing keys mirror events (`organization.archived`, `warehouse.deleted`, `employee.status.changed`, `user.director.deleted`), queues are durable. Cross-service consumers append the consumer name (`organization.archived.sso.queue`). The currently wired cross-service flows: SSO publishes `user.director.deleted` → org-service archives the org and warehouse-service deletes its warehouses; org-service publishes `organization.archived` and `employee.status.changed` → SSO clears `organization_id`/`is_active`; warehouse-service publishes `warehouse.deleted` → SSO clears `warehouse_id` on affected users.
+Each service declares its own exchanges/queues/bindings in `<service>/config/RabbitMQConfig.java`. Conventions: one `TopicExchange` per service (`sso.exchange`, `organization.exchange`, `warehouse.exchange`, `product.exchange`), routing keys mirror events (`organization.deleted`, `organization.archived`, `warehouse.deleted`, `employee.status.changed`, `user.director.deleted`), queues are durable. Cross-service consumers append the consumer name (`organization.deleted.sso.queue`, `organization.deleted.product.queue`, `organization.deleted.warehouse.queue`).
+
+**Cross-service flow при удалении DIRECTOR (рефактор 2026-05-21):**
+- SSO `DELETE /api/profile` физически удаляет user → publishes `user.director.deleted`.
+- org-service consumes → `deleteOrganizationOnDirectorDelete` (физический wipe org-таблиц) → publishes **`organization.deleted`** с `{orgId, employeeUserIds}`.
+- warehouse-service consumes `organization.deleted` → cascade DELETE warehouses + racks + slots.
+- product-service `OrganizationDeletionListener` consumes → wipe org-scoped таблиц через JdbcTemplate + MinIO cleanup по `generated_documents.minio_object_key`.
+- SSO `EmployeeEventListener.handleOrganizationDeleted` consumes → физически удаляет `UserReadModel` бывших сотрудников + их LoginAudit/UserEvent/Redis-токены.
+
+Старое событие `organization.archived` сохранилось для ручного `OrganizationService.deleteOrganization` (soft-archive) и backward-compat. Также: `employee.status.changed` (block/unblock) → SSO toggles `isActive`; `warehouse.deleted` → SSO clears `warehouse_id` on affected users.
 
 ## Deployment
 

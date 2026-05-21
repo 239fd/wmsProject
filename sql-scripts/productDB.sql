@@ -12,6 +12,7 @@ CREATE TABLE product_read_model (
     volume_m3       NUMERIC(10, 3),
     price           NUMERIC(12, 2),
     abc_class       VARCHAR(255) NOT NULL DEFAULT 'C',
+    required_storage_condition VARCHAR(20) CHECK (required_storage_condition IS NULL OR required_storage_condition IN ('ROOM', 'COOL', 'FRIDGE', 'FREEZER')),
     organization_id UUID,
     created_at      TIMESTAMP NOT NULL DEFAULT now(),
     updated_at      TIMESTAMP NOT NULL DEFAULT now()
@@ -55,7 +56,8 @@ CREATE TABLE product_batch (
     expiry_date        DATE,
     supplier           VARCHAR(255),
     purchase_price     NUMERIC(12, 2),
-    storage_conditions VARCHAR(20),
+    storage_conditions VARCHAR(20) CHECK (storage_conditions IS NULL OR storage_conditions IN ('ROOM', 'COOL', 'FRIDGE', 'FREEZER')),
+    packaging_type     VARCHAR(10) CHECK (packaging_type IS NULL OR packaging_type IN ('PALLET', 'BOX', 'CRATE', 'EACH')),
     created_at         TIMESTAMP NOT NULL DEFAULT now()
 );
 
@@ -204,21 +206,30 @@ CREATE TABLE supplies (
     supply_id       UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     organization_id UUID,
     supplier_id     UUID REFERENCES suppliers(supplier_id),
+    supplier_name   VARCHAR(255),
     warehouse_id    UUID NOT NULL,
     status          supply_status NOT NULL DEFAULT 'PLANNED',
+    external_id     VARCHAR(100),
+    source          VARCHAR(32) NOT NULL DEFAULT 'MANUAL',
+    quantity_only   BOOLEAN NOT NULL DEFAULT FALSE,
     expected_date   DATE,
     actual_date     DATE,
     total_items     INT NOT NULL DEFAULT 0,
+    currency        VARCHAR(8),
+    total_amount    NUMERIC(14, 2),
+    snapshot        JSONB,
     notes           TEXT,
     created_by      UUID NOT NULL,
     created_at      TIMESTAMP NOT NULL DEFAULT now(),
-    updated_at      TIMESTAMP NOT NULL DEFAULT now()
+    updated_at      TIMESTAMP NOT NULL DEFAULT now(),
+    CONSTRAINT uq_supplies_org_external UNIQUE (organization_id, external_id)
 );
 
 CREATE INDEX idx_supplies_organization_id ON supplies(organization_id);
 CREATE INDEX idx_supplies_supplier_id ON supplies(supplier_id);
 CREATE INDEX idx_supplies_warehouse_id ON supplies(warehouse_id);
 CREATE INDEX idx_supplies_status ON supplies(status);
+CREATE INDEX idx_supplies_external_id ON supplies(external_id);
 
 CREATE TYPE saga_type AS ENUM ('RECEIVE', 'SHIP');
 CREATE TYPE saga_status AS ENUM ('PENDING', 'COMPLETED', 'FAILED', 'COMPENSATING', 'COMPENSATED', 'COMPENSATION_FAILED');
@@ -241,13 +252,30 @@ CREATE INDEX idx_saga_state_created_at ON saga_state(created_at);
 CREATE INDEX idx_supplies_expected_date ON supplies(expected_date);
 
 CREATE TABLE supply_items (
-    item_id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    supply_id       UUID NOT NULL REFERENCES supplies(supply_id) ON DELETE CASCADE,
-    product_id      UUID NOT NULL,
-    expected_qty    NUMERIC(12, 3) NOT NULL,
-    actual_qty      NUMERIC(12, 3),
-    unit_price      NUMERIC(12, 2),
-    notes           VARCHAR(255)
+    item_id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    supply_id            UUID NOT NULL REFERENCES supplies(supply_id) ON DELETE CASCADE,
+    product_id           UUID,
+    row_number           INT,
+    product_name         VARCHAR(255),
+    sku                  VARCHAR(100),
+    barcode              VARCHAR(100),
+    category             VARCHAR(100),
+    unit_of_measure      VARCHAR(50),
+    manufacturer         VARCHAR(255),
+    storage_conditions   VARCHAR(20) CHECK (storage_conditions IS NULL OR storage_conditions IN ('ROOM', 'COOL', 'FRIDGE', 'FREEZER')),
+    expected_qty         NUMERIC(12, 3) NOT NULL,
+    actual_qty           NUMERIC(12, 3),
+    unit_price           NUMERIC(12, 2),
+    vat_rate             NUMERIC(5, 2),
+    vat_amount           NUMERIC(12, 2),
+    total_amount         NUMERIC(14, 2),
+    packaging_type       VARCHAR(10) CHECK (packaging_type IS NULL OR packaging_type IN ('PALLET', 'BOX', 'CRATE', 'EACH')),
+    batch_number         VARCHAR(100),
+    manufacture_date     DATE,
+    expiry_date          DATE,
+    purchase_price       NUMERIC(12, 2),
+    marked_for_writeoff  BOOLEAN NOT NULL DEFAULT FALSE,
+    notes                VARCHAR(255)
 );
 
 CREATE TABLE shipment_request (
@@ -294,23 +322,6 @@ CREATE INDEX idx_shipment_request_items_unit_sku ON shipment_request_items(unit_
 CREATE INDEX idx_supply_items_supply_id ON supply_items(supply_id);
 CREATE INDEX idx_supply_items_product_id ON supply_items(product_id);
 
-CREATE TABLE planned_deliveries (
-    delivery_id       UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    external_id       VARCHAR(100) NOT NULL UNIQUE,
-    organization_id   UUID,
-    supplier_name     VARCHAR(255),
-    product_name      VARCHAR(255),
-    expected_quantity INT,
-    expected_date     DATE,
-    warehouse_id      UUID,
-    source            VARCHAR(50),
-    extracted_at      TIMESTAMP NOT NULL DEFAULT now(),
-    processed         BOOLEAN NOT NULL DEFAULT FALSE
-);
-
-CREATE INDEX idx_planned_deliveries_external_id ON planned_deliveries(external_id);
-CREATE INDEX idx_planned_deliveries_expected_date ON planned_deliveries(expected_date);
-
 CREATE TABLE extraction_log (
     log_id          BIGSERIAL PRIMARY KEY,
     source          VARCHAR(50) NOT NULL,
@@ -356,22 +367,3 @@ CREATE INDEX idx_generated_documents_generated_at
     ON generated_documents(generated_at);
 
 
-CREATE TABLE erp_connection (
-    connection_id    UUID PRIMARY KEY,
-    organization_id  UUID NOT NULL,
-    aggregator       VARCHAR(32) NOT NULL,
-    name             VARCHAR(255),
-    username         VARCHAR(255),
-    password_enc     TEXT,
-    base_path        VARCHAR(512),
-    section_name     VARCHAR(255),
-    journal_name     VARCHAR(255),
-    driver_url       VARCHAR(255),
-    is_default       BOOLEAN NOT NULL DEFAULT FALSE,
-    created_by       UUID NOT NULL,
-    created_at       TIMESTAMP NOT NULL DEFAULT now(),
-    updated_at       TIMESTAMP NOT NULL DEFAULT now()
-);
-
-CREATE INDEX idx_erp_connection_org_aggregator ON erp_connection(organization_id, aggregator);
-CREATE INDEX idx_erp_connection_org_default ON erp_connection(organization_id, is_default);

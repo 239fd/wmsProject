@@ -1,6 +1,6 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
-CREATE TYPE rack_kind AS ENUM ('SHELF', 'CELL', 'FRIDGE', 'PALLET');
+CREATE TYPE rack_kind AS ENUM ('SHELF', 'CELL', 'PALLET');
 
 CREATE TABLE warehouse_read_model
 (
@@ -35,7 +35,8 @@ CREATE TABLE rack_read_model
     warehouse_id       UUID         NOT NULL REFERENCES warehouse_read_model (warehouse_id) ON DELETE CASCADE,
     kind               rack_kind    NOT NULL,
     name               VARCHAR(255) NOT NULL,
-    storage_conditions VARCHAR(20),
+    storage_conditions VARCHAR(20)  NOT NULL DEFAULT 'ROOM' CHECK (storage_conditions IN ('ROOM', 'COOL', 'FRIDGE', 'FREEZER')),
+    max_weight_kg      NUMERIC(10, 2),
     is_active          BOOLEAN      NOT NULL DEFAULT TRUE,
     created_at         TIMESTAMP    NOT NULL DEFAULT now(),
     updated_at         TIMESTAMP    NOT NULL DEFAULT now()
@@ -61,11 +62,11 @@ CREATE TABLE shelf
     shelf_id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     rack_id           UUID          NOT NULL REFERENCES rack_read_model (rack_id) ON DELETE CASCADE,
     organization_id   UUID,
-    shelf_capacity_kg NUMERIC(8, 2) NOT NULL,
+    shelf_capacity_kg NUMERIC(8, 2),
     length_cm         NUMERIC(8, 2) NOT NULL,
     width_cm          NUMERIC(8, 2) NOT NULL,
     height_cm         NUMERIC(8, 2) NOT NULL,
-    CONSTRAINT chk_shelf_capacity CHECK (shelf_capacity_kg > 0),
+    CONSTRAINT chk_shelf_capacity CHECK (shelf_capacity_kg IS NULL OR shelf_capacity_kg > 0),
     CONSTRAINT chk_shelf_dims CHECK (length_cm > 0 AND width_cm > 0 AND height_cm > 0)
 );
 CREATE INDEX idx_shelf_organization_id ON shelf(organization_id);
@@ -84,27 +85,13 @@ CREATE TABLE cell
 );
 CREATE INDEX idx_cell_organization_id ON cell(organization_id);
 
-CREATE TABLE fridge
-(
-    rack_id           UUID PRIMARY KEY REFERENCES rack_read_model (rack_id) ON DELETE CASCADE,
-    organization_id   UUID,
-    min_temperature_c NUMERIC(5, 2),
-    max_temperature_c NUMERIC(5, 2),
-    length_cm         NUMERIC(8, 2) NOT NULL,
-    width_cm          NUMERIC(8, 2) NOT NULL,
-    height_cm         NUMERIC(8, 2) NOT NULL,
-    CONSTRAINT chk_fridge_dims CHECK (length_cm > 0 AND width_cm > 0 AND height_cm > 0),
-    CONSTRAINT chk_fridge_temp_range CHECK (min_temperature_c IS NULL OR max_temperature_c IS NULL OR min_temperature_c <= max_temperature_c)
-);
-CREATE INDEX idx_fridge_organization_id ON fridge(organization_id);
-
 CREATE TABLE pallet
 (
     rack_id            UUID PRIMARY KEY REFERENCES rack_read_model (rack_id) ON DELETE CASCADE,
     pallet_place_count INT           NOT NULL,
-    max_weight_kg      NUMERIC(8, 2) NOT NULL,
+    max_weight_kg      NUMERIC(8, 2),
     CONSTRAINT chk_pallet_places CHECK (pallet_place_count > 0),
-    CONSTRAINT chk_pallet_weight CHECK (max_weight_kg > 0)
+    CONSTRAINT chk_pallet_weight CHECK (max_weight_kg IS NULL OR max_weight_kg > 0)
 );
 
 CREATE TABLE pallet_place
@@ -114,6 +101,9 @@ CREATE TABLE pallet_place
     organization_id UUID,
     length_cm       NUMERIC(8, 2) NOT NULL,
     width_cm        NUMERIC(8, 2) NOT NULL,
-    height_cm       NUMERIC(8, 2) NOT NULL
+    height_cm       NUMERIC(8, 2) NOT NULL,
+    max_height_cm   NUMERIC(8, 2),
+    CONSTRAINT chk_pallet_place_max_height
+        CHECK (max_height_cm IS NULL OR max_height_cm > 0)
 );
 CREATE INDEX idx_pallet_place_organization_id ON pallet_place(organization_id);
