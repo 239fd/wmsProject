@@ -62,7 +62,7 @@ CREATE TABLE product_batch (
     package_length_cm  NUMERIC(8, 2),
     package_width_cm   NUMERIC(8, 2),
     package_height_cm  NUMERIC(8, 2),
-    package_weight_kg  NUMERIC(10, 3),
+    package_weight_kg  NUMERIC(14, 3),
     created_at         TIMESTAMP NOT NULL DEFAULT now()
 );
 
@@ -279,7 +279,7 @@ CREATE TABLE supply_items (
     package_length_cm    NUMERIC(8, 2),
     package_width_cm     NUMERIC(8, 2),
     package_height_cm    NUMERIC(8, 2),
-    package_weight_kg    NUMERIC(10, 3),
+    package_weight_kg    NUMERIC(14, 3),
     batch_number         VARCHAR(100),
     manufacture_date     DATE,
     expiry_date          DATE,
@@ -316,14 +316,16 @@ CREATE INDEX idx_shipment_request_status ON shipment_request(status);
 CREATE INDEX idx_shipment_request_shipment_type ON shipment_request(shipment_type);
 
 CREATE TABLE shipment_request_items (
-    item_id      UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    request_id   UUID NOT NULL REFERENCES shipment_request(request_id) ON DELETE CASCADE,
-    product_id   UUID NOT NULL,
-    batch_id     UUID,
-    expected_qty NUMERIC(12, 3) NOT NULL,
-    picked_qty   NUMERIC(12, 3) NOT NULL DEFAULT 0,
-    unit_sku     VARCHAR(20),
-    status       VARCHAR(20) NOT NULL DEFAULT 'PENDING'
+    item_id       UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    request_id    UUID NOT NULL REFERENCES shipment_request(request_id) ON DELETE CASCADE,
+    product_id    UUID NOT NULL,
+    batch_id      UUID,
+    inventory_id  UUID,
+    cell_id       UUID,
+    expected_qty  NUMERIC(12, 3) NOT NULL,
+    picked_qty    NUMERIC(12, 3) NOT NULL DEFAULT 0,
+    unit_sku      VARCHAR(20),
+    status        VARCHAR(20) NOT NULL DEFAULT 'PENDING'
 );
 
 CREATE INDEX idx_shipment_request_items_request_id ON shipment_request_items(request_id);

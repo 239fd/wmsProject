@@ -325,7 +325,7 @@ Exclusions в `backend/build.gradle ext.jacocoExcludes`: `config/dto/model.entit
 
 ---
 
-## 5.5 WORKER приёмка — блок 2 🚧 IN PROGRESS 2026-05-22
+## 5.5 WORKER приёмка — блок 2 ✅ DONE 2026-05-22
 
 Раунд 1 (5 багов) ✅ FIXED: склад обязателен, 500 expected_qty, supplier/date затирается, wizard не идёт, SSO secrets в .env.
 
@@ -372,13 +372,13 @@ Exclusions в `backend/build.gradle ext.jacocoExcludes`: `config/dto/model.entit
 - **6.3 фиксы**: `NonUniqueResultException` при приёмке — `findByProductIdAndWarehouseIdForUpdate` падал когда у товара на одном складе несколько inventory-row (разные cell/batch). Заменён на `findExactInventoryForUpdate(productId, batchId, warehouseId, cellId)`. При transfer source с qty=0 удаляется → ячейка освобождается. Auto-pick + UI receive wizard теперь фильтруют по `packagingType` — PALLET идёт только на pallet-места, остальное (BOX/CRATE/EACH) — только на cells/shelves. TransferDialog: дробное перемещение, фильтр target по packagingType.
 - **6.4 единицы измерения (вариант C)**: `inventory.quantity` — в **штуках** (canonical). На FE worker вводит «упаковок» × «шт./упак.» = «шт.». Добавлены колонки `package_length_cm/width_cm/height_cm/weight_kg` на `supply_items` и `product_batch`. `PlacementService` теперь считает: вес = `packageWeightKg × numPackages` (или `product.weightKg × quantity`), объём = `(L×W×H/1e6) × numPackages` (через габариты упаковки, не product.volumeM3). Для PALLET — доп. проверка `packageHeightCm ≤ palletPlace.maxHeightCm`. FE: новые поля «Длина/Ширина/Высота/Вес упак.» в receive wizard и в CreateSupplyDialog. TransferDialog работает в упаковках с авто-конвертацией в штуки.
 - **Карточки товара** ✅ (6.2): ProductCardPage с 3 вкладками (Где хранится / Партии / История). Списки фильтруются по `user.warehouseId` (worker видит только свой склад). В строке inventory — кнопка «Переместить» (отключена для других складов и для зарезервированного товара). `TransferDialog` перемещает **всю ячейку целиком** (`quantity = source.quantity`, поле количества убрано); target — Autocomplete cells-flat того же warehouseId с фильтром по `storageConditions`. История показывает «Откуда → Куда» для TRANSFER. Endpoint `POST /api/operations/transfer` уже умеет, ProductOperation+InventoryEvent (REMOVED+ADDED) пишутся автоматически. Документ не оформляется. **Контекст пользователя**: видит и перемещает только WORKER; перемещение только в пределах своего `user.warehouseId`; перемещение целиком ячейки X-товара (вся `inventory.quantity`, не дробное — «ящик переезжает, а не штуки из ящика»); карточка = все операции по товару на складе + вкладка «где хранится» с кнопкой; запись в истории `Товар X: ячейка Y → ячейка Z`.
-- ⬜ **Отгрузка**: UI в ShipPage (визуализация FEFO/FIFO выбора, прогресс пиков, документы при complete).
+- **Отгрузка** ✅ (6.5, 2026-05-22): FEFO/FIFO/AUTO с split на N items при create, резерв `Inventory.reservedQuantity` под лок, `complete` без второго FEFO (идёт по сохранённому `inventoryId`), `cancel` освобождает резерв. Picking-list ЛП генерируется при create. UI: scanner SKU + Enter→+1, статусы PARTIAL/PICKED, отображение партии/expiry/ячейки. Auto-cleanup пустых inventory + orphans cellId=null (inline + startup + cron 15 мин). Валидация УНП/ИНН получателя (9/10/12 цифр), recipientName+address required. Документы waybill/TN/CMR при complete с алиасами (consignee/shipper/loadingPoint/deliveryPoint, НДС 20%, totals). DataEnrichmentService подтягивает shipperName/Inn/Address из organization-service.
 
 Связи: `Product (1) ↔ (M) SupplyItem.productId` (nullable) + `ProductBatch.productId` (NOT NULL) + `Inventory.productId`. `Supply (1) ↔ (M) ProductBatch.supplyId` (опц.).
 
 ---
 
-## 5.6 Флоу Бухгалтера ⬜ NOT STARTED
+## 5.6 Флоу Бухгалтера 🚧 IN PROGRESS 2026-05-22
 
 После раунда 6 (WORKER) — ручной прогон UC-11..UC-16. Открытые блоки:
 - ⬜ **Переоценка** (`RevaluationPage`): новая цена + комиссия → revaluation-act (ПЕР), InventoryEvent REVALUED.
