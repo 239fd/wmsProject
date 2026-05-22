@@ -58,6 +58,11 @@ CREATE TABLE product_batch (
     purchase_price     NUMERIC(12, 2),
     storage_conditions VARCHAR(20) CHECK (storage_conditions IS NULL OR storage_conditions IN ('ROOM', 'COOL', 'FRIDGE', 'FREEZER')),
     packaging_type     VARCHAR(10) CHECK (packaging_type IS NULL OR packaging_type IN ('PALLET', 'BOX', 'CRATE', 'EACH')),
+    units_per_package  INT,
+    package_length_cm  NUMERIC(8, 2),
+    package_width_cm   NUMERIC(8, 2),
+    package_height_cm  NUMERIC(8, 2),
+    package_weight_kg  NUMERIC(10, 3),
     created_at         TIMESTAMP NOT NULL DEFAULT now()
 );
 
@@ -270,6 +275,11 @@ CREATE TABLE supply_items (
     vat_amount           NUMERIC(12, 2),
     total_amount         NUMERIC(14, 2),
     packaging_type       VARCHAR(10) CHECK (packaging_type IS NULL OR packaging_type IN ('PALLET', 'BOX', 'CRATE', 'EACH')),
+    units_per_package    INT,
+    package_length_cm    NUMERIC(8, 2),
+    package_width_cm     NUMERIC(8, 2),
+    package_height_cm    NUMERIC(8, 2),
+    package_weight_kg    NUMERIC(10, 3),
     batch_number         VARCHAR(100),
     manufacture_date     DATE,
     expiry_date          DATE,
