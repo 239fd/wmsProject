@@ -59,31 +59,45 @@ CREATE INDEX idx_rack_events_rack_id ON rack_events (rack_id);
 
 CREATE TABLE shelf
 (
-    shelf_id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    rack_id           UUID          NOT NULL REFERENCES rack_read_model (rack_id) ON DELETE CASCADE,
-    organization_id   UUID,
-    shelf_capacity_kg NUMERIC(8, 2),
-    length_cm         NUMERIC(8, 2) NOT NULL,
-    width_cm          NUMERIC(8, 2) NOT NULL,
-    height_cm         NUMERIC(8, 2) NOT NULL,
+    shelf_id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    rack_id             UUID          NOT NULL REFERENCES rack_read_model (rack_id) ON DELETE CASCADE,
+    warehouse_id        UUID          NOT NULL,
+    slot_code           VARCHAR(32)   NOT NULL,
+    organization_id     UUID,
+    shelf_capacity_kg   NUMERIC(8, 2),
+    length_cm           NUMERIC(8, 2) NOT NULL,
+    width_cm            NUMERIC(8, 2) NOT NULL,
+    height_cm           NUMERIC(8, 2) NOT NULL,
+    remaining_height_cm NUMERIC(8, 2),
     CONSTRAINT chk_shelf_capacity CHECK (shelf_capacity_kg IS NULL OR shelf_capacity_kg > 0),
-    CONSTRAINT chk_shelf_dims CHECK (length_cm > 0 AND width_cm > 0 AND height_cm > 0)
+    CONSTRAINT chk_shelf_dims CHECK (length_cm > 0 AND width_cm > 0 AND height_cm > 0),
+    CONSTRAINT chk_shelf_remaining
+        CHECK (remaining_height_cm IS NULL OR remaining_height_cm >= 0),
+    CONSTRAINT uk_shelf_code UNIQUE (warehouse_id, slot_code)
 );
 CREATE INDEX idx_shelf_organization_id ON shelf(organization_id);
+CREATE INDEX idx_shelf_warehouse_id ON shelf(warehouse_id);
 
 CREATE TABLE cell
 (
-    cell_id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    rack_id         UUID          NOT NULL REFERENCES rack_read_model (rack_id) ON DELETE CASCADE,
-    organization_id UUID,
-    max_weight_kg   NUMERIC(8, 2),
-    length_cm       NUMERIC(8, 2) NOT NULL,
-    width_cm        NUMERIC(8, 2) NOT NULL,
-    height_cm       NUMERIC(8, 2) NOT NULL,
+    cell_id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    rack_id             UUID          NOT NULL REFERENCES rack_read_model (rack_id) ON DELETE CASCADE,
+    warehouse_id        UUID          NOT NULL,
+    slot_code           VARCHAR(32)   NOT NULL,
+    organization_id     UUID,
+    max_weight_kg       NUMERIC(8, 2),
+    length_cm           NUMERIC(8, 2) NOT NULL,
+    width_cm            NUMERIC(8, 2) NOT NULL,
+    height_cm           NUMERIC(8, 2) NOT NULL,
+    remaining_height_cm NUMERIC(8, 2),
     CONSTRAINT chk_cell_weight CHECK (max_weight_kg IS NULL OR max_weight_kg > 0),
-    CONSTRAINT chk_cell_dims CHECK (length_cm > 0 AND width_cm > 0 AND height_cm > 0)
+    CONSTRAINT chk_cell_dims CHECK (length_cm > 0 AND width_cm > 0 AND height_cm > 0),
+    CONSTRAINT chk_cell_remaining
+        CHECK (remaining_height_cm IS NULL OR remaining_height_cm >= 0),
+    CONSTRAINT uk_cell_code UNIQUE (warehouse_id, slot_code)
 );
 CREATE INDEX idx_cell_organization_id ON cell(organization_id);
+CREATE INDEX idx_cell_warehouse_id ON cell(warehouse_id);
 
 CREATE TABLE pallet
 (
@@ -96,14 +110,21 @@ CREATE TABLE pallet
 
 CREATE TABLE pallet_place
 (
-    place_id        UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    rack_id         UUID          NOT NULL REFERENCES pallet (rack_id) ON DELETE CASCADE,
-    organization_id UUID,
-    length_cm       NUMERIC(8, 2) NOT NULL,
-    width_cm        NUMERIC(8, 2) NOT NULL,
-    height_cm       NUMERIC(8, 2) NOT NULL,
-    max_height_cm   NUMERIC(8, 2),
+    place_id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    rack_id             UUID          NOT NULL REFERENCES pallet (rack_id) ON DELETE CASCADE,
+    warehouse_id        UUID          NOT NULL,
+    slot_code           VARCHAR(32)   NOT NULL,
+    organization_id     UUID,
+    length_cm           NUMERIC(8, 2) NOT NULL,
+    width_cm            NUMERIC(8, 2) NOT NULL,
+    height_cm           NUMERIC(8, 2) NOT NULL,
+    max_height_cm       NUMERIC(8, 2),
+    remaining_height_cm NUMERIC(8, 2),
     CONSTRAINT chk_pallet_place_max_height
-        CHECK (max_height_cm IS NULL OR max_height_cm > 0)
+        CHECK (max_height_cm IS NULL OR max_height_cm > 0),
+    CONSTRAINT chk_pallet_place_remaining
+        CHECK (remaining_height_cm IS NULL OR remaining_height_cm >= 0),
+    CONSTRAINT uk_pallet_place_code UNIQUE (warehouse_id, slot_code)
 );
 CREATE INDEX idx_pallet_place_organization_id ON pallet_place(organization_id);
+CREATE INDEX idx_pallet_place_warehouse_id ON pallet_place(warehouse_id);

@@ -8,8 +8,6 @@ CREATE TABLE product_read_model (
     category        VARCHAR(100),
     description     TEXT,
     unit_of_measure VARCHAR(50),
-    weight_kg       NUMERIC(10, 2),
-    volume_m3       NUMERIC(10, 3),
     price           NUMERIC(12, 2),
     abc_class       VARCHAR(255) NOT NULL DEFAULT 'C',
     required_storage_condition VARCHAR(20) CHECK (required_storage_condition IS NULL OR required_storage_condition IN ('ROOM', 'COOL', 'FRIDGE', 'FREEZER')),
@@ -70,6 +68,8 @@ CREATE INDEX idx_product_batch_product_id ON product_batch(product_id);
 CREATE INDEX idx_product_batch_organization_id ON product_batch(organization_id);
 CREATE INDEX idx_product_batch_supply_id ON product_batch(supply_id);
 CREATE INDEX idx_product_batch_expiry_date ON product_batch(expiry_date);
+CREATE UNIQUE INDEX uq_product_batch_org_number
+    ON product_batch(organization_id, batch_number) WHERE batch_number IS NOT NULL;
 
 CREATE TABLE inventory (
     inventory_id      UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -166,7 +166,12 @@ CREATE TABLE receipt_session (
     receipt_order_doc_id    UUID,
     receipt_act_doc_id      UUID,
     placement_list_doc_id   UUID,
+    document_error          TEXT,
     general_notes           TEXT,
+    contract_number         VARCHAR(100),
+    contract_date           DATE,
+    responsible_user_id     UUID,
+    commission_members      TEXT,
     created_by              UUID NOT NULL,
     created_at              TIMESTAMP NOT NULL DEFAULT now(),
     completed_at            TIMESTAMP
@@ -205,7 +210,7 @@ CREATE INDEX idx_suppliers_organization_id ON suppliers(organization_id);
 CREATE INDEX idx_suppliers_name ON suppliers(name);
 CREATE INDEX idx_suppliers_unp ON suppliers(unp);
 
-CREATE TYPE supply_status AS ENUM ('PLANNED', 'IN_PROGRESS', 'ACCEPTED', 'REJECTED', 'CANCELLED');
+CREATE TYPE supply_status AS ENUM ('PLANNED', 'IN_PROGRESS', 'ACCEPTED', 'COMPLETED_WITH_DISCREPANCY', 'REJECTED', 'CANCELLED');
 
 CREATE TABLE supplies (
     supply_id       UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -305,6 +310,8 @@ CREATE TABLE shipment_request (
     domestic_document_kind VARCHAR(8)  NOT NULL DEFAULT 'TN',
     recipient_country      VARCHAR(64),
     recipient_gln          VARCHAR(32),
+    picking_list_doc_id    UUID,
+    document_error         TEXT,
     created_by             UUID,
     created_at             TIMESTAMP NOT NULL DEFAULT now(),
     updated_at             TIMESTAMP NOT NULL DEFAULT now()
@@ -367,6 +374,7 @@ CREATE TABLE generated_documents (
     generated_by      UUID NOT NULL,
     generated_at      TIMESTAMP NOT NULL DEFAULT now(),
     payload           JSONB,
+    superseded_by     UUID,
     CONSTRAINT uk_generated_documents_number
         UNIQUE (organization_id, document_type, document_number)
 );
